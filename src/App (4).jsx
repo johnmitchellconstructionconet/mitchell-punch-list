@@ -1384,3 +1384,4 @@ function Report({tasks,jobLabel,filters,userName,loadPhoto,onBack,project}){
     </div>
   </div>);
 }
+
