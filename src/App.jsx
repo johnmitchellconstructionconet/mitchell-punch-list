@@ -76,9 +76,9 @@ const STATUS_META = {
 const STATUSES = ["Reported","Scheduled","Done"];
 
 const APPROVAL_META = {
-  Pending:  { bg:"#F5F3F0", fg:"#8A8279", label:"Pending"  },
-  Approved: { bg:"#EAF2E8", fg:"#4A7A40", label:"Approved" },
-  Rejected: { bg:"#FFF3CD", fg:"#856404", label:"Needs Corrections" },
+  Pending:  { bg:"#F5F3F0", fg:"#8A8279", label:"Pending"         },
+  Approved: { bg:"#EAF2E8", fg:"#4A7A40", label:"Approved"        },
+  Rejected: { bg:"#FDECEA", fg:"#B04035", label:"Needs Corrections"},
 };
 const PRIORITIES = ["High","Medium","Low"];
 const PRI_FG = { High:C.rust, Medium:C.amber, Low:C.taupe };
@@ -1228,9 +1228,10 @@ function TaskList({tasks,showProject,onOpen,loadPhoto}){
 
 function TaskCard({task,showProject,onOpen,loadPhoto}){
   const overdue=task.dueDate&&task.dueDate<today()&&task.status!=="Done";
-  const accent=STATUS_META[task.status]?.fg||C.taupe;
+  const isRejected=task.approval==="Rejected";
+  const accent=isRejected?C.rust:STATUS_META[task.status]?.fg||C.taupe;
   return(
-    <div onClick={onOpen} style={{background:C.card,border:`1px solid ${C.line}`,borderLeft:`5px solid ${accent}`,borderRadius:10,cursor:"pointer",overflow:"hidden"}}>
+    <div onClick={onOpen} style={{background:isRejected?"#FEF6F5":C.card,border:`1px solid ${isRejected?"#F5C6C2":C.line}`,borderLeft:`5px solid ${accent}`,borderRadius:10,cursor:"pointer",overflow:"hidden"}}>
 
       {/* Section 1 — Location header */}
       <div style={{padding:"8px 13px",borderBottom:`1px solid ${C.line}`,background:C.mist,display:"flex",justifyContent:"space-between",alignItems:"center",gap:8}}>
@@ -1474,9 +1475,13 @@ function TaskDetail({taskId,tasks:allTasks,userName,loadPhoto,savePhoto,requestA
       ts:h.ts,
       label:h.status==="Needs Corrections"&&h.reason
         ?`Needs Corrections — "${h.reason}"`
-        :`Status → ${h.status}`,
+        :h.status.startsWith("Corrected")
+          ?"✓ Corrected — resubmitted for approval"
+          :`Status → ${h.status}`,
       by:h.by,
-      color:h.status==="Needs Corrections"||h.status==="Rejected"?C.rust:h.status==="Approved"?C.sage:STATUS_META[h.status]?.fg||C.taupe,
+      color:h.status==="Needs Corrections"||h.status==="Rejected"?C.rust
+        :h.status==="Approved"||h.status.startsWith("Corrected")?C.sage
+        :STATUS_META[h.status]?.fg||C.taupe,
       rejectionPhotos:h.photos||[],
       isRejection:h.status==="Needs Corrections"&&(h.reason||(h.photos||[]).length>0),
     })),
@@ -1488,11 +1493,16 @@ function TaskDetail({taskId,tasks:allTasks,userName,loadPhoto,savePhoto,requestA
       <div style={{padding:0,overflow:"hidden",borderRadius:14}}>
 
         {/* Header */}
-        <div style={{padding:"16px 18px",background:STATUS_META[task.status]?.bg||C.mist,borderBottom:`1px solid ${C.line}`}}>
+        <div style={{padding:"16px 18px",background:task.approval==="Rejected"?"#FDECEA":STATUS_META[task.status]?.bg||C.mist,borderBottom:`1px solid ${task.approval==="Rejected"?"#F5C6C2":C.line}`}}>
+          {task.approval==="Rejected"&&(
+            <div style={{...CAPT,fontSize:11,fontWeight:700,color:C.rust,letterSpacing:"0.1em",marginBottom:10,display:"flex",alignItems:"center",gap:6}}>
+              <span style={{fontSize:14}}>✗</span> NEEDS CORRECTIONS
+            </div>
+          )}
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:10}}>
             <div style={{flex:1,minWidth:0}}>
-              <div style={{fontSize:12,fontWeight:600,color:C.taupe,marginBottom:4}}>
-                {task.project} · <span style={{color:accent}}>{task.area}</span>
+              <div style={{fontSize:12,fontWeight:600,color:task.approval==="Rejected"?C.rust:C.taupe,marginBottom:4}}>
+                {task.project} · <span style={{color:task.approval==="Rejected"?C.rust:accent}}>{task.area}</span>
                 {tradeInfo&&<span style={{fontWeight:400}}> · {tradeInfo.contactName||tradeInfo.name}{tradeInfo.phone?" · "+tradeInfo.phone:""}</span>}
               </div>
               <h2 style={{margin:"0 0 9px",fontSize:21,lineHeight:1.3,fontWeight:700}}>{task.description}</h2>
@@ -1575,6 +1585,26 @@ function TaskDetail({taskId,tasks:allTasks,userName,loadPhoto,savePhoto,requestA
               </React.Fragment>
             ))}
           </div>
+          {/* "Mark as Corrected" workflow — only shown when task is Rejected */}
+          {task.approval==="Rejected"&&(
+            <div style={{marginBottom:12,padding:"14px 16px",background:"#FEF6F5",border:`1.5px solid ${C.rust}`,borderRadius:10}}>
+              <div style={{fontWeight:700,fontSize:13,color:C.rust,marginBottom:4}}>✗ Work has been rejected</div>
+              {task.rejectionReason&&<div style={{fontSize:13,color:C.rust,marginBottom:10,lineHeight:1.5}}>{task.rejectionReason}</div>}
+              <div style={{fontSize:13,color:C.taupe,marginBottom:12}}>Once the trade has made corrections, mark as corrected to send back for approval. The rejection history is preserved.</div>
+              <Btn style={{background:C.ink,color:"#fff",fontSize:13,padding:"9px 18px"}}
+                onClick={()=>onUpdate({
+                  approval:"Pending",
+                  status:"Reported",
+                  approvedBy:null,
+                  approvedAt:null,
+                  rejectionReason:null,
+                  rejectionPhotos:[],
+                  statusHistory:[...(task.statusHistory||[]),{status:"Corrected — Pending Re-Approval",by:userName,ts:Date.now()}],
+                })}>
+                ✓ Mark as Corrected — Submit for Re-Approval
+              </Btn>
+            </div>
+          )}
           <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center",marginBottom:showRejectPanel?12:0}}>
             <span style={{...CAPT,fontSize:10,color:C.taupe,fontWeight:600}}>Approval:</span>
             <Btn kind="green" style={{padding:"7px 13px",fontSize:13}} onClick={()=>{setShowRejectPanel(false);onUpdate({approval:"Approved",status:"Done",approvedBy:userName,approvedAt:Date.now(),statusHistory:[...(task.statusHistory||[]),{status:"Approved",by:userName,ts:Date.now()}]});}}>✓ Approve</Btn>
