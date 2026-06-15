@@ -1103,9 +1103,9 @@ function Modal({children,onClose,wide,xwide}){
   return(
     <div ref={backdropRef} className="no-print"
       onMouseDown={e=>{if(e.target===backdropRef.current)onClose();}}
-      style={{position:"fixed",inset:0,zIndex:50,background:"rgba(30,28,26,0.55)"}}>
-      <div style={{position:"absolute",inset:0,overflowY:"auto",display:"flex",alignItems:"flex-start",justifyContent:"center",padding:"22px 8px"}}>
-        <div style={{background:C.paper,borderRadius:14,width:"100%",maxWidth:xwide?1160:wide?980:620,boxShadow:"0 16px 48px rgba(0,0,0,0.26)",flexShrink:0}}>
+      style={{position:"fixed",inset:0,zIndex:50,background:"rgba(30,28,26,0.55)",WebkitOverflowScrolling:"touch"}}>
+      <div style={{position:"absolute",inset:0,overflowY:"auto",display:"flex",alignItems:"flex-start",justifyContent:"center",padding:"16px 8px"}}>
+        <div style={{background:C.paper,borderRadius:14,width:"100%",maxWidth:xwide?1160:wide?980:620,boxShadow:"0 16px 48px rgba(0,0,0,0.26)",flexShrink:0,marginBottom:16}}>
           {children}
         </div>
       </div>
@@ -2032,7 +2032,7 @@ function NewTaskModal({userName,lockedProject,projects,companies,trades,savePhot
       </div>
       <div><Lbl>Priority</Lbl><select value={f.priority} onChange={set("priority")}>{PRIORITIES.map(p=><option key={p}>{p}</option>)}</select></div>
       <div><Lbl>Due date</Lbl><input type="date" value={f.dueDate} onChange={set("dueDate")}/></div>
-      <div><Lbl>Photos</Lbl><Btn kind="ghost" style={{width:"100%"}} onClick={()=>fileRef.current.click()}>📷 Add photo</Btn><input ref={fileRef} type="file" accept="image/*" capture="environment" onChange={hFile} style={{display:"none"}}/></div>
+      <div style={{gridColumn:"1 / -1"}}><Lbl>Photos</Lbl><Btn kind="ghost" style={{width:"100%"}} onClick={()=>fileRef.current.click()}>📷 Add photo</Btn><input ref={fileRef} type="file" accept="image/*" capture="environment" onChange={hFile} style={{display:"none"}}/></div>
     </div>
     {photos.length>0&&<div style={{display:"flex",gap:7,marginTop:10,flexWrap:"wrap"}}>{photos.map((p,i)=><img key={i} src={p} alt="" style={{width:66,height:66,objectFit:"cover",borderRadius:7}}/>)}</div>}
     <div style={{display:"flex",gap:9,marginTop:16,justifyContent:"flex-end"}}>
@@ -2045,84 +2045,114 @@ function NewTaskModal({userName,lockedProject,projects,companies,trades,savePhot
 }
 
 function Annotator({dataUrl,onCancel,onSave}){
-  const cvRef=useRef(); const imgRef=useRef(); const sRef=useRef([]); const curRef=useRef(null);
-  const [color,setColor]=useState("#E8230D"); const [pen,setPen]=useState(4); const [,setT]=useState(0);
-  const cRef=useRef(color); cRef.current=color; const pRef=useRef(pen); pRef.current=pen;
+  // Dual-canvas: baseRef holds committed image+strokes (repainted only on stroke end/undo).
+  // liveRef is a transparent overlay for the active stroke only — keeps iPad smooth.
+  const baseRef=useRef(); const liveRef=useRef();
+  const imgRef=useRef(); const sRef=useRef([]); const curRef=useRef(null);
+  const [color,setColor]=useState("#E8230D"); const [pen,setPen]=useState(4);
+  const [strokeCount,setStrokeCount]=useState(0);
+  const cRef=useRef(color); cRef.current=color;
+  const pRef=useRef(pen);   pRef.current=pen;
 
   const COLORS=[
-    {hex:"#E8230D",label:"Red"},
-    {hex:"#FF6B00",label:"Orange"},
-    {hex:"#FFD60A",label:"Yellow"},
-    {hex:"#1FC94B",label:"Green"},
-    {hex:"#1FA2FF",label:"Blue"},
-    {hex:"#A855F7",label:"Purple"},
-    {hex:"#FF69B4",label:"Pink"},
-    {hex:"#FFFFFF",label:"White"},
-    {hex:"#2E2B28",label:"Black"},
+    {hex:"#E8230D",label:"Red"},{hex:"#FF6B00",label:"Orange"},{hex:"#FFD60A",label:"Yellow"},
+    {hex:"#1FC94B",label:"Green"},{hex:"#1FA2FF",label:"Blue"},{hex:"#A855F7",label:"Purple"},
+    {hex:"#FF69B4",label:"Pink"},{hex:"#FFFFFF",label:"White"},{hex:"#2E2B28",label:"Black"},
   ];
-
   const THICKNESSES=[
-    {value:2, label:"Fine (2px)"},
-    {value:4, label:"Thin (4px)"},
-    {value:7, label:"Medium (7px)"},
-    {value:12,label:"Thick (12px)"},
-    {value:20,label:"Heavy (20px)"},
-    {value:32,label:"Brush (32px)"},
+    {value:2,label:"Fine (2px)"},{value:4,label:"Thin (4px)"},{value:7,label:"Medium (7px)"},
+    {value:12,label:"Thick (12px)"},{value:20,label:"Heavy (20px)"},{value:32,label:"Brush (32px)"},
   ];
 
-  useEffect(()=>{const img=new Image();img.onload=()=>{imgRef.current=img;const cv=cvRef.current;cv.width=img.width;cv.height=img.height;redraw();};img.src=dataUrl;},[dataUrl]);
+  useEffect(()=>{
+    const img=new Image();
+    img.onload=()=>{
+      imgRef.current=img;
+      [baseRef,liveRef].forEach(r=>{if(r.current){r.current.width=img.width;r.current.height=img.height;}});
+      redrawBase();
+    };
+    img.src=dataUrl;
+  },[dataUrl]);
 
-  const redraw=()=>{
-    const cv=cvRef.current;if(!cv||!imgRef.current)return;
-    const ctx=cv.getContext("2d");ctx.drawImage(imgRef.current,0,0);
-    for(const s of curRef.current?[...sRef.current,curRef.current]:sRef.current){
+  const redrawBase=()=>{
+    const cv=baseRef.current; if(!cv||!imgRef.current)return;
+    const ctx=cv.getContext("2d");
+    ctx.drawImage(imgRef.current,0,0);
+    for(const s of sRef.current){
       ctx.strokeStyle=s.color;ctx.lineWidth=s.size;ctx.lineCap="round";ctx.lineJoin="round";
       ctx.beginPath();s.points.forEach(([x,y],i)=>i?ctx.lineTo(x,y):ctx.moveTo(x,y));ctx.stroke();
     }
   };
 
-  const pos=e=>{const cv=cvRef.current;const r=cv.getBoundingClientRect();return[((e.clientX-r.left)/r.width)*cv.width,((e.clientY-r.top)/r.height)*cv.height];};
-  const onPD=e=>{e.preventDefault();cvRef.current.setPointerCapture(e.pointerId);curRef.current={color:cRef.current,size:pRef.current,points:[pos(e)]};};
-  const onPM=e=>{e.preventDefault();if(!curRef.current)return;curRef.current.points.push(pos(e));redraw();};
-  const onPU=()=>{if(curRef.current){sRef.current.push(curRef.current);curRef.current=null;setT(v=>v+1);}};
+  const drawLive=()=>{
+    const cv=liveRef.current; if(!cv)return;
+    const ctx=cv.getContext("2d");
+    ctx.clearRect(0,0,cv.width,cv.height);
+    const s=curRef.current; if(!s||!s.points.length)return;
+    ctx.strokeStyle=s.color;ctx.lineWidth=s.size;ctx.lineCap="round";ctx.lineJoin="round";
+    ctx.beginPath();s.points.forEach(([x,y],i)=>i?ctx.lineTo(x,y):ctx.moveTo(x,y));ctx.stroke();
+  };
 
-  return(<div className="no-print" style={{position:"fixed",inset:0,background:"#111",zIndex:80,display:"flex",flexDirection:"column",userSelect:"none",WebkitUserSelect:"none",MozUserSelect:"none"}}>
-    <div style={{padding:"10px 14px",display:"flex",gap:10,alignItems:"center",flexWrap:"wrap",background:"#1a1918"}}>
-      <span style={{...DISP,color:"#fff",fontSize:18,fontWeight:600,marginRight:4}}>Mark Up Photo</span>
-      <div style={{display:"flex",gap:5,flexWrap:"wrap",alignItems:"center"}}>
-        {COLORS.map(c=>(
-          <button key={c.hex} onClick={()=>setColor(c.hex)} title={c.label}
-            style={{width:28,height:28,borderRadius:"50%",background:c.hex,
-              border:color===c.hex?"3px solid #fff":"2px solid rgba(255,255,255,0.2)",
-              boxShadow:color===c.hex?"0 0 0 2px #555":"none",cursor:"pointer",flexShrink:0}}/>
-        ))}
+  const clearLive=()=>{const cv=liveRef.current;if(cv)cv.getContext("2d").clearRect(0,0,cv.width,cv.height);};
+
+  const pos=(e)=>{
+    const cv=liveRef.current; const r=cv.getBoundingClientRect();
+    return[((e.clientX-r.left)/r.width)*cv.width,((e.clientY-r.top)/r.height)*cv.height];
+  };
+
+  const onPD=e=>{e.preventDefault();liveRef.current.setPointerCapture(e.pointerId);curRef.current={color:cRef.current,size:pRef.current,points:[pos(e)]};drawLive();};
+  const onPM=e=>{e.preventDefault();if(!curRef.current)return;curRef.current.points.push(pos(e));drawLive();};
+  const onPU=()=>{
+    if(!curRef.current)return;
+    sRef.current.push(curRef.current);
+    curRef.current=null;
+    clearLive();
+    redrawBase();
+    setStrokeCount(sRef.current.length);
+  };
+
+  const undo=()=>{sRef.current.pop();redrawBase();setStrokeCount(sRef.current.length);};
+  const exportImage=()=>{const base=baseRef.current;if(base)onSave(base.toDataURL("image/jpeg",0.82));};
+
+  return(
+    <div className="no-print" style={{position:"fixed",inset:0,background:"#111",zIndex:80,display:"flex",flexDirection:"column",userSelect:"none",WebkitUserSelect:"none",MozUserSelect:"none"}}>
+      <div style={{padding:"10px 14px",display:"flex",gap:10,alignItems:"center",flexWrap:"wrap",background:"#1a1918"}}>
+        <span style={{...DISP,color:"#fff",fontSize:18,fontWeight:600,marginRight:4}}>Mark Up Photo</span>
+        <div style={{display:"flex",gap:5,flexWrap:"wrap",alignItems:"center"}}>
+          {COLORS.map(c=>(
+            <button key={c.hex} onPointerDown={e=>e.stopPropagation()} onClick={()=>setColor(c.hex)} title={c.label}
+              style={{width:28,height:28,borderRadius:"50%",background:c.hex,border:color===c.hex?"3px solid #fff":"2px solid rgba(255,255,255,0.2)",boxShadow:color===c.hex?"0 0 0 2px #555":"none",cursor:"pointer",flexShrink:0}}/>
+          ))}
+        </div>
+        <div style={{display:"flex",alignItems:"center",gap:6}}>
+          <span style={{color:"#888",fontSize:12,whiteSpace:"nowrap"}}>Thickness</span>
+          <select value={pen} onChange={e=>setPen(Number(e.target.value))}
+            style={{background:"#2a2826",color:"#fff",border:"1px solid #555",borderRadius:6,padding:"6px 10px",fontSize:13,cursor:"pointer"}}>
+            {THICKNESSES.map(t=><option key={t.value} value={t.value}>{t.label}</option>)}
+          </select>
+          <svg width="50" height="28" style={{flexShrink:0}}>
+            <line x1="4" y1="14" x2="46" y2="14" stroke={color} strokeWidth={Math.min(pen,20)} strokeLinecap="round"/>
+          </svg>
+        </div>
+        <button onPointerDown={e=>e.stopPropagation()} onClick={undo} disabled={strokeCount===0}
+          style={{background:"#2a2826",color:"#fff",padding:"8px 12px",opacity:strokeCount>0?1:0.4,border:"none",borderRadius:8,cursor:"pointer"}}>
+          ↩ Undo
+        </button>
+        <div style={{flex:1}}/>
+        <button onPointerDown={e=>e.stopPropagation()} onClick={onCancel} style={{background:"transparent",color:"#ccc",border:"1px solid #555",padding:"9px 14px",borderRadius:8,cursor:"pointer"}}>Cancel</button>
+        <Btn onPointerDown={e=>e.stopPropagation()} onClick={exportImage}>Save</Btn>
       </div>
-      <div style={{display:"flex",alignItems:"center",gap:6}}>
-        <span style={{color:"#888",fontSize:12,whiteSpace:"nowrap"}}>Thickness</span>
-        <select value={pen} onChange={e=>setPen(Number(e.target.value))}
-          style={{background:"#2a2826",color:"#fff",border:"1px solid #555",borderRadius:6,padding:"6px 10px",fontSize:13,cursor:"pointer"}}>
-          {THICKNESSES.map(t=><option key={t.value} value={t.value}>{t.label}</option>)}
-        </select>
-        <svg width="50" height="28" style={{flexShrink:0}}>
-          <line x1="4" y1="14" x2="46" y2="14" stroke={color} strokeWidth={Math.min(pen,20)} strokeLinecap="round"/>
-        </svg>
+      <div style={{flex:1,position:"relative",overflow:"hidden",display:"flex",alignItems:"center",justifyContent:"center",padding:10}}>
+        <canvas ref={baseRef} style={{position:"absolute",maxWidth:"100%",maxHeight:"100%",borderRadius:6,background:"#000",touchAction:"none",pointerEvents:"none"}}/>
+        <canvas ref={liveRef}
+          onPointerDown={onPD} onPointerMove={onPM} onPointerUp={onPU} onPointerCancel={onPU}
+          style={{position:"absolute",maxWidth:"100%",maxHeight:"100%",borderRadius:6,touchAction:"none",cursor:"crosshair",WebkitTouchCallout:"none"}}/>
       </div>
-      <button onClick={()=>{sRef.current.pop();redraw();setT(v=>v+1);}} disabled={!sRef.current.length}
-        style={{background:"#2a2826",color:"#fff",padding:"8px 12px",opacity:sRef.current.length?1:0.4,border:"none",borderRadius:8,cursor:"pointer"}}>
-        ↩ Undo
-      </button>
-      <div style={{flex:1}}/>
-      <button onClick={onCancel} style={{background:"transparent",color:"#ccc",border:"1px solid #555",padding:"9px 14px",borderRadius:8,cursor:"pointer"}}>Cancel</button>
-      <Btn onClick={()=>onSave(cvRef.current.toDataURL("image/jpeg",0.82))}>Save</Btn>
+      <div style={{textAlign:"center",color:"#555",fontSize:12,paddingBottom:10}}>
+        Draw to mark up the issue. ↩ Undo removes the last stroke.
+      </div>
     </div>
-    <div style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",padding:10,minHeight:0}}>
-      <canvas ref={cvRef} onPointerDown={onPD} onPointerMove={onPM} onPointerUp={onPU} onPointerCancel={onPU}
-        style={{maxWidth:"100%",maxHeight:"100%",touchAction:"none",borderRadius:6,background:"#000",cursor:"crosshair",userSelect:"none",WebkitUserSelect:"none",WebkitTouchCallout:"none"}}/>
-    </div>
-    <div style={{textAlign:"center",color:"#555",fontSize:12,paddingBottom:10}}>
-      Draw to circle or mark up the issue. Pick color and thickness above. ↩ Undo to remove last stroke.
-    </div>
-  </div>);
+  );
 }
 
 function Lightbox({photoId,loadPhoto,onClose}){
