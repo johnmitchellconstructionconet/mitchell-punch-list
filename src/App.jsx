@@ -2046,30 +2046,25 @@ function NewTaskModal({userName,lockedProject,projects,companies,trades,savePhot
 
 function Annotator({dataUrl,onCancel,onSave}){
   /*
-   * Architecture:
-   * baseRef  = committed strokes + image. Repainted only on stroke-end or undo.
-   * liveRef  = active stroke overlay only. Uses desynchronized:true so the GPU
-   *            composites it independently of the main thread — eliminates frame-wait lag.
-   *
-   * Input pipeline:
-   * Listeners attached via native addEventListener({passive:false}) — bypasses
-   * React synthetic event batching which adds ~1 frame of latency.
-   * getCoalescedEvents() drains all Apple Pencil samples queued between frames.
-   * Incremental draw: only draws the new segment, never replays the whole stroke.
+   * SVG overlay approach — fastest possible on iPad/Apple Pencil.
+   * The photo is a plain <img>. Strokes are SVG paths composited on top.
+   * The live (in-progress) stroke path element is updated via direct DOM
+   * mutation — zero React re-render latency during drawing.
+   * On Save, we draw photo + SVG onto a canvas once for JPEG export.
    */
-  const baseRef    = useRef();
-  const liveRef    = useRef();
-  const imgRef     = useRef();
-  const sRef       = useRef([]);
-  const curRef     = useRef(null);
-  const lastPtRef  = useRef(null);
-  const liveCtxRef = useRef(null);
-
-  const [color,       setColor]       = useState("#E8230D");
-  const [pen,         setPen]         = useState(4);
-  const [strokeCount, setStrokeCount] = useState(0);
+  const [committedStrokes, setCommittedStrokes] = useState([]); // [{d, color, size}]
+  const [color, setColor] = useState("#E8230D");
+  const [pen,   setPen]   = useState(4);
   const cRef = useRef(color); cRef.current = color;
   const pRef = useRef(pen);   pRef.current = pen;
+
+  // Refs for zero-latency live stroke
+  const livePathRef  = useRef();   // the <path> DOM element for current stroke
+  const isDrawing    = useRef(false);
+  const currentPts   = useRef([]);  // raw points of active stroke
+  const svgRef       = useRef();    // the SVG element (for export)
+  const imgRef       = useRef();    // the <img> element (for export)
+  const wrapRef      = useRef();    // container div (for sizing)
 
   const COLORS = [
     {hex:"#E8230D",label:"Red"},    {hex:"#FF6B00",label:"Orange"},
@@ -2079,121 +2074,128 @@ function Annotator({dataUrl,onCancel,onSave}){
     {hex:"#2E2B28",label:"Black"},
   ];
   const THICKNESSES = [
-    {value:2,label:"Fine (2px)"},   {value:4,label:"Thin (4px)"},
-    {value:7,label:"Medium (7px)"}, {value:12,label:"Thick (12px)"},
-    {value:20,label:"Heavy (20px)"},{value:32,label:"Brush (32px)"},
+    {value:2,label:"Fine (2px)"},    {value:4,label:"Thin (4px)"},
+    {value:7,label:"Medium (7px)"},  {value:12,label:"Thick (12px)"},
+    {value:20,label:"Heavy (20px)"}, {value:32,label:"Brush (32px)"},
   ];
 
+  // Build an SVG path d-string from a points array
+  const ptsToD = pts => {
+    if(!pts.length) return "";
+    return pts.map(([x,y],i) => (i===0?`M${x},${y}`:`L${x},${y}`)).join(" ");
+  };
+
+  // Get SVG-space coordinates from a pointer event
+  const toSVGPos = e => {
+    const svg = svgRef.current; if(!svg) return [0,0];
+    const r   = svg.getBoundingClientRect();
+    const vb  = svg.viewBox.baseVal;
+    return [
+      ((e.clientX - r.left) / r.width)  * vb.width,
+      ((e.clientY - r.top)  / r.height) * vb.height,
+    ];
+  };
+
+  // Native pointer event handlers — attached directly, no React batching
   useEffect(()=>{
-    const img = new Image();
-    img.onload = ()=>{
-      imgRef.current = img;
-      [baseRef, liveRef].forEach(r=>{
-        if(r.current){ r.current.width = img.width; r.current.height = img.height; }
-      });
-      if(liveRef.current){
-        liveCtxRef.current = liveRef.current.getContext("2d", {desynchronized:true})
-                          || liveRef.current.getContext("2d");
+    const svg = svgRef.current; if(!svg) return;
+
+    const onDown = e => {
+      e.preventDefault();
+      svg.setPointerCapture(e.pointerId);
+      isDrawing.current  = true;
+      currentPts.current = [toSVGPos(e)];
+      // Set live path initial position — no React re-render
+      if(livePathRef.current){
+        livePathRef.current.setAttribute("d", ptsToD(currentPts.current));
+        livePathRef.current.setAttribute("stroke", cRef.current);
+        livePathRef.current.setAttribute("stroke-width", pRef.current);
       }
-      redrawBase();
-    };
-    img.src = dataUrl;
-  }, [dataUrl]);
-
-  const redrawBase = ()=>{
-    const cv = baseRef.current; if(!cv || !imgRef.current) return;
-    const ctx = cv.getContext("2d");
-    ctx.drawImage(imgRef.current, 0, 0);
-    for(const s of sRef.current){
-      ctx.strokeStyle = s.color; ctx.lineWidth = s.size;
-      ctx.lineCap = "round"; ctx.lineJoin = "round";
-      ctx.beginPath();
-      s.points.forEach(([x,y],i) => i ? ctx.lineTo(x,y) : ctx.moveTo(x,y));
-      ctx.stroke();
-    }
-  };
-
-  const drawSegment = (from, to)=>{
-    const ctx = liveCtxRef.current; if(!ctx) return;
-    const s   = curRef.current; if(!s) return;
-    ctx.strokeStyle = s.color; ctx.lineWidth = s.size;
-    ctx.lineCap = "round"; ctx.lineJoin = "round";
-    ctx.beginPath();
-    ctx.moveTo(from[0], from[1]);
-    ctx.lineTo(to[0],   to[1]);
-    ctx.stroke();
-  };
-
-  const clearLive = ()=>{
-    const cv = liveRef.current; if(!cv) return;
-    (liveCtxRef.current || cv.getContext("2d")).clearRect(0,0,cv.width,cv.height);
-  };
-
-  const toCanvasPos = (clientX, clientY)=>{
-    const cv = liveRef.current; if(!cv) return [0,0];
-    const r  = cv.getBoundingClientRect();
-    return [((clientX-r.left)/r.width)*cv.width, ((clientY-r.top)/r.height)*cv.height];
-  };
-
-  useEffect(()=>{
-    const cv = liveRef.current; if(!cv) return;
-
-    const onDown = e=>{
-      e.preventDefault();
-      cv.setPointerCapture(e.pointerId);
-      const pt = toCanvasPos(e.clientX, e.clientY);
-      curRef.current    = { color:cRef.current, size:pRef.current, points:[pt] };
-      lastPtRef.current = pt;
-      const ctx = liveCtxRef.current; if(!ctx) return;
-      ctx.fillStyle = cRef.current;
-      ctx.beginPath();
-      ctx.arc(pt[0], pt[1], pRef.current/2, 0, Math.PI*2);
-      ctx.fill();
     };
 
-    const onMove = e=>{
+    const onMove = e => {
       e.preventDefault();
-      if(!curRef.current) return;
+      if(!isDrawing.current) return;
+      // Drain all coalesced pencil samples between frames
       const events = e.getCoalescedEvents ? e.getCoalescedEvents() : [e];
       for(const ev of events){
-        const pt = toCanvasPos(ev.clientX, ev.clientY);
-        if(lastPtRef.current) drawSegment(lastPtRef.current, pt);
-        curRef.current.points.push(pt);
-        lastPtRef.current = pt;
+        currentPts.current.push(toSVGPos(ev));
+      }
+      // Update live path d-attribute directly on the DOM node — zero React overhead
+      if(livePathRef.current){
+        livePathRef.current.setAttribute("d", ptsToD(currentPts.current));
       }
     };
 
-    const onUp = ()=>{
-      if(!curRef.current) return;
-      sRef.current.push(curRef.current);
-      curRef.current = null; lastPtRef.current = null;
-      clearLive(); redrawBase();
-      setStrokeCount(sRef.current.length);
+    const onUp = e => {
+      if(!isDrawing.current) return;
+      isDrawing.current = false;
+      const pts = [...currentPts.current];
+      currentPts.current = [];
+      // Clear live path
+      if(livePathRef.current) livePathRef.current.setAttribute("d","");
+      // Commit stroke to React state (triggers one re-render to add the permanent path)
+      if(pts.length > 0){
+        setCommittedStrokes(prev => [...prev, {
+          d: ptsToD(pts),
+          color: cRef.current,
+          size:  pRef.current,
+        }]);
+      }
     };
 
-    cv.addEventListener("pointerdown",   onDown, {passive:false});
-    cv.addEventListener("pointermove",   onMove, {passive:false});
-    cv.addEventListener("pointerup",     onUp,   {passive:false});
-    cv.addEventListener("pointercancel", onUp,   {passive:false});
-    return ()=>{
-      cv.removeEventListener("pointerdown",   onDown);
-      cv.removeEventListener("pointermove",   onMove);
-      cv.removeEventListener("pointerup",     onUp);
-      cv.removeEventListener("pointercancel", onUp);
+    svg.addEventListener("pointerdown",   onDown, {passive:false});
+    svg.addEventListener("pointermove",   onMove, {passive:false});
+    svg.addEventListener("pointerup",     onUp,   {passive:false});
+    svg.addEventListener("pointercancel", onUp,   {passive:false});
+    return () => {
+      svg.removeEventListener("pointerdown",   onDown);
+      svg.removeEventListener("pointermove",   onMove);
+      svg.removeEventListener("pointerup",     onUp);
+      svg.removeEventListener("pointercancel", onUp);
     };
   }, []);
 
-  const undo = ()=>{ sRef.current.pop(); redrawBase(); setStrokeCount(sRef.current.length); };
-  const exportImage = ()=>{ const b = baseRef.current; if(b) onSave(b.toDataURL("image/jpeg",0.82)); };
+  const undo = () => setCommittedStrokes(s => s.slice(0,-1));
+
+  // Export: draw img + SVG strokes onto a canvas, export as JPEG
+  const exportImage = () => {
+    const img = imgRef.current; if(!img) return;
+    const svg = svgRef.current; if(!svg) return;
+    const W = img.naturalWidth, H = img.naturalHeight;
+    const cv  = document.createElement("canvas");
+    cv.width = W; cv.height = H;
+    const ctx = cv.getContext("2d");
+    ctx.drawImage(img, 0, 0, W, H);
+    // Draw each committed stroke
+    for(const s of committedStrokes){
+      const p = new Path2D(s.d);
+      // Path coords are in viewBox units — scale to canvas pixels
+      const vb = svg.viewBox.baseVal;
+      const sx = W / vb.width, sy = H / vb.height;
+      ctx.save();
+      ctx.scale(sx, sy);
+      ctx.strokeStyle = s.color;
+      ctx.lineWidth   = s.size;
+      ctx.lineCap     = "round";
+      ctx.lineJoin    = "round";
+      ctx.stroke(p);
+      ctx.restore();
+    }
+    onSave(cv.toDataURL("image/jpeg", 0.82));
+  };
 
   return(
     <div className="no-print" style={{position:"fixed",inset:0,background:"#111",zIndex:80,display:"flex",flexDirection:"column",userSelect:"none",WebkitUserSelect:"none",MozUserSelect:"none"}}>
-      <div style={{padding:"10px 14px",display:"flex",gap:10,alignItems:"center",flexWrap:"wrap",background:"#1a1918"}}>
+      {/* Toolbar */}
+      <div style={{padding:"10px 14px",display:"flex",gap:10,alignItems:"center",flexWrap:"wrap",background:"#1a1918",flexShrink:0}}>
         <span style={{...DISP,color:"#fff",fontSize:18,fontWeight:600,marginRight:4}}>Mark Up Photo</span>
         <div style={{display:"flex",gap:5,flexWrap:"wrap",alignItems:"center"}}>
           {COLORS.map(c=>(
             <button key={c.hex} onPointerDown={e=>e.stopPropagation()} onClick={()=>setColor(c.hex)} title={c.label}
-              style={{width:28,height:28,borderRadius:"50%",background:c.hex,border:color===c.hex?"3px solid #fff":"2px solid rgba(255,255,255,0.2)",boxShadow:color===c.hex?"0 0 0 2px #555":"none",cursor:"pointer",flexShrink:0}}/>
+              style={{width:28,height:28,borderRadius:"50%",background:c.hex,
+                border:color===c.hex?"3px solid #fff":"2px solid rgba(255,255,255,0.2)",
+                boxShadow:color===c.hex?"0 0 0 2px #555":"none",cursor:"pointer",flexShrink:0}}/>
           ))}
         </div>
         <div style={{display:"flex",alignItems:"center",gap:6}}>
@@ -2206,8 +2208,8 @@ function Annotator({dataUrl,onCancel,onSave}){
             <line x1="4" y1="14" x2="46" y2="14" stroke={color} strokeWidth={Math.min(pen,20)} strokeLinecap="round"/>
           </svg>
         </div>
-        <button onPointerDown={e=>e.stopPropagation()} onClick={undo} disabled={strokeCount===0}
-          style={{background:"#2a2826",color:"#fff",padding:"8px 12px",opacity:strokeCount>0?1:0.4,border:"none",borderRadius:8,cursor:"pointer"}}>
+        <button onPointerDown={e=>e.stopPropagation()} onClick={undo} disabled={committedStrokes.length===0}
+          style={{background:"#2a2826",color:"#fff",padding:"8px 12px",opacity:committedStrokes.length>0?1:0.4,border:"none",borderRadius:8,cursor:"pointer"}}>
           ↩ Undo
         </button>
         <div style={{flex:1}}/>
@@ -2217,11 +2219,29 @@ function Annotator({dataUrl,onCancel,onSave}){
         </button>
         <Btn onPointerDown={e=>e.stopPropagation()} onClick={exportImage}>Save</Btn>
       </div>
-      <div style={{flex:1,position:"relative",overflow:"hidden",display:"flex",alignItems:"center",justifyContent:"center",padding:10}}>
-        <canvas ref={baseRef} style={{position:"absolute",maxWidth:"100%",maxHeight:"100%",borderRadius:6,background:"#000",touchAction:"none",pointerEvents:"none"}}/>
-        <canvas ref={liveRef} style={{position:"absolute",maxWidth:"100%",maxHeight:"100%",borderRadius:6,touchAction:"none",cursor:"crosshair",WebkitTouchCallout:"none"}}/>
+
+      {/* Drawing area: photo + SVG overlay stacked */}
+      <div ref={wrapRef} style={{flex:1,position:"relative",overflow:"hidden",display:"flex",alignItems:"center",justifyContent:"center",padding:10,background:"#111"}}>
+        <div style={{position:"relative",maxWidth:"100%",maxHeight:"100%",lineHeight:0}}>
+          {/* Photo */}
+          <img ref={imgRef} src={dataUrl} alt=""
+            style={{display:"block",maxWidth:"100%",maxHeight:"calc(100vh - 120px)",objectFit:"contain",borderRadius:6,pointerEvents:"none",WebkitUserSelect:"none"}}/>
+          {/* SVG overlay — sits exactly over the image, receives all pointer events */}
+          <svg ref={svgRef}
+            viewBox={`0 0 ${imgRef.current?.naturalWidth||1000} ${imgRef.current?.naturalHeight||1000}`}
+            style={{position:"absolute",inset:0,width:"100%",height:"100%",touchAction:"none",cursor:"crosshair",overflow:"visible",WebkitTouchCallout:"none"}}>
+            {/* Committed strokes */}
+            {committedStrokes.map((s,i)=>(
+              <path key={i} d={s.d} stroke={s.color} strokeWidth={s.size}
+                fill="none" strokeLinecap="round" strokeLinejoin="round"/>
+            ))}
+            {/* Live stroke — updated via direct DOM mutation, not React */}
+            <path ref={livePathRef} d="" fill="none"
+              stroke={color} strokeWidth={pen} strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+        </div>
       </div>
-      <div style={{textAlign:"center",color:"#555",fontSize:12,paddingBottom:10}}>
+      <div style={{textAlign:"center",color:"#555",fontSize:12,paddingBottom:10,flexShrink:0}}>
         Draw to mark up the issue. ↩ Undo removes the last stroke.
       </div>
     </div>
