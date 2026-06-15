@@ -751,7 +751,11 @@ function InternalApp() {
               onStatusChange={async(proj,newStatus)=>await updateProjectState({...proj,status:newStatus})}
               userName={user} onMentions={()=>setShowMentions(true)}
               teamMembers={teamMembers}
-              onOpenMyTask={id=>{setOpenTaskId(id);}}/>
+              onOpenMyTask={id=>{
+                const t=tasks.find(x=>x.id===id);
+                if(t){setCurrentJob(t.project);setFilters({status:"All",trade:"All",priority:"All",dueDate:"All",q:""});}
+                setOpenTaskId(id);
+              }}/>
           ):(
             <>
               <JobBar project={currProj} jobLabel={currentJob==="ALL"?"All jobs":currentJob}
@@ -1260,39 +1264,64 @@ function Dashboard({projects,tasks,onOpenJob,onAllJobs,onNewJob,onDirectory,onEm
         <StatCard label="Overdue" value={tot.over} color={tot.over?C.rust:C.taupe}/>
       </div>
 
-      {/* My Tasks strip */}
+      {/* ── My Tasks ── */}
       {userName&&(()=>{
-        const myTasks=tasks.filter(t=>(t.myTasks||[]).includes(userName)&&t.approval!=="Approved");
-        if(!myTasks.length) return null;
+        const myTasks=tasks
+          .filter(t=>(t.myTasks||[]).includes(userName)&&t.approval!=="Approved")
+          .sort((a,b)=>{
+            const aOver=a.dueDate&&a.dueDate<today()?0:1;
+            const bOver=b.dueDate&&b.dueDate<today()?0:1;
+            if(aOver!==bOver) return aOver-bOver;
+            return (a.dueDate||"9999").localeCompare(b.dueDate||"9999");
+          });
         const overdueMy=myTasks.filter(t=>t.dueDate&&t.dueDate<today()).length;
         return(
-          <div style={{marginBottom:14,background:C.card,border:`1.5px solid ${C.gold}`,borderRadius:12,overflow:"hidden"}}>
-            <div style={{padding:"10px 16px",borderBottom:`1px solid ${C.line}`,background:"#FFFBF0",display:"flex",alignItems:"center",gap:10}}>
-              <span style={{fontSize:16}}>📋</span>
+          <div style={{marginBottom:18,background:C.card,border:`1.5px solid ${C.gold}`,borderRadius:12,overflow:"hidden"}}>
+            {/* Header */}
+            <div style={{padding:"12px 16px",background:"#FFFBF0",borderBottom:`1px solid ${C.line}`,display:"flex",alignItems:"center",gap:10}}>
+              <span style={{fontSize:18}}>📋</span>
               <div style={{flex:1}}>
-                <div style={{fontWeight:700,fontSize:13,color:C.ink}}>My Tasks <span style={{fontWeight:400,color:C.taupe}}>— {myTasks.length} item{myTasks.length!==1?"s":""} assigned to you</span></div>
-                {overdueMy>0&&<div style={{fontSize:12,color:C.rust,fontWeight:600}}>{overdueMy} overdue</div>}
+                <div style={{...DISP,fontSize:18,fontWeight:600,color:C.ink}}>My Tasks</div>
+                <div style={{fontSize:12,color:C.taupe,marginTop:1}}>
+                  {myTasks.length===0?"No open tasks assigned to you":`${myTasks.length} open task${myTasks.length!==1?"s":""}`}
+                  {overdueMy>0&&<span style={{color:C.rust,fontWeight:700,marginLeft:8}}>· {overdueMy} overdue</span>}
+                </div>
               </div>
             </div>
-            <div style={{padding:"10px 14px",display:"grid",gap:7}}>
-              {myTasks.slice(0,5).map(t=>{
-                const overdue=t.dueDate&&t.dueDate<today();
-                return(
-                  <div key={t.id} onClick={()=>onOpenMyTask(t.id)}
-                    style={{display:"flex",alignItems:"center",gap:12,padding:"9px 12px",borderRadius:8,border:`1px solid ${overdue?"#F5C6C2":C.line}`,background:overdue?"#FEF6F5":"#fff",cursor:"pointer"}}>
-                    <div style={{flex:1,minWidth:0}}>
-                      <div style={{fontWeight:600,fontSize:13,color:C.ink,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{t.description}</div>
-                      <div style={{fontSize:12,color:C.taupe,marginTop:2}}>{t.project} · {t.area}</div>
+            {/* Task rows */}
+            {myTasks.length===0?(
+              <div style={{padding:"18px 16px",fontSize:13,color:C.stone,textAlign:"center"}}>
+                Tasks you assign to yourself will appear here. When creating a punch item, toggle "Add to My Tasks".
+              </div>
+            ):(
+              <div style={{padding:"10px 12px",display:"grid",gap:6}}>
+                {myTasks.map(t=>{
+                  const overdue=t.dueDate&&t.dueDate<today();
+                  const isRej=t.approval==="Rejected";
+                  return(
+                    <div key={t.id} onClick={()=>onOpenMyTask(t.id)}
+                      style={{display:"flex",alignItems:"center",gap:12,padding:"10px 12px",borderRadius:9,
+                        border:`1px solid ${isRej?"#F5C6C2":overdue?"#F5C6C2":C.line}`,
+                        background:isRej?"#FEF6F5":overdue?"#FFF8F8":"#fff",cursor:"pointer"}}>
+                      {/* Priority dot */}
+                      <div style={{width:8,height:8,borderRadius:"50%",background:PRI_FG[t.priority]||C.taupe,flexShrink:0}}/>
+                      {/* Main content */}
+                      <div style={{flex:1,minWidth:0}}>
+                        <div style={{fontWeight:600,fontSize:13,color:isRej?C.rust:C.ink,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+                          {isRej&&<span style={{marginRight:5}}>✗</span>}{t.description}
+                        </div>
+                        <div style={{fontSize:11.5,color:C.taupe,marginTop:2}}>{t.project} · {t.area}</div>
+                      </div>
+                      {/* Right side */}
+                      <div style={{textAlign:"right",flexShrink:0,display:"flex",flexDirection:"column",alignItems:"flex-end",gap:3}}>
+                        <StatusChip status={t.status}/>
+                        {t.dueDate&&<div style={{fontSize:11.5,color:overdue?C.rust:C.stone,fontWeight:overdue?700:400}}>{fmtDate(t.dueDate)}{overdue?" ⚠":""}</div>}
+                      </div>
                     </div>
-                    <div style={{textAlign:"right",flexShrink:0}}>
-                      <div style={{fontSize:12,color:overdue?C.rust:C.taupe,fontWeight:overdue?700:400}}>{fmtDate(t.dueDate)}{overdue?" ⚠":""}</div>
-                      <div style={{marginTop:3}}><StatusChip status={t.status}/></div>
-                    </div>
-                  </div>
-                );
-              })}
-              {myTasks.length>5&&<div style={{fontSize:12,color:C.taupe,textAlign:"center",paddingTop:4}}>+{myTasks.length-5} more — view inside the job</div>}
-            </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         );
       })()}
@@ -2073,8 +2102,9 @@ function NewJobModal({onCancel,onCreate}){
   </div></Modal>);
 }
 
-function NewTaskModal({userName,lockedProject,projects,companies,trades,savePhoto,requestAnnotate,onCancel,onCreate}){
+function NewTaskModal({userName,lockedProject,projects,companies,trades,savePhoto,requestAnnotate,onCancel,onCreate,teamMembers=[]}){
   const [f,setF]=useState({project:lockedProject||projects[0]?.name||"",area:"",description:"",trades:[],priority:"Medium",dueDate:today()});
+  const [myTaskAssign,setMyTaskAssign]=useState(userName?[userName]:[]);
   const [photos,setPhotos]=useState([]); const [creating,setCreating]=useState(false); const fileRef=useRef();
   const set=k=>e=>setF({...f,[k]:e.target.value});
   const ok=f.project&&f.area&&f.description&&f.trades.length>0;
@@ -2084,11 +2114,23 @@ function NewTaskModal({userName,lockedProject,projects,companies,trades,savePhot
     const ids=[];for(const p of photos)ids.push(await savePhoto(p));
     onCreate({id:uid(),...f,project:f.project.trim(),area:f.area.trim(),
       trade:f.trades.join(", "),trades:f.trades,
+      myTasks:myTaskAssign,
       status:"Reported",approval:"Pending",photos:ids,comments:[],statusHistory:[],createdBy:userName,createdAt:Date.now(),approvedBy:null,approvedAt:null});
     setCreating(false);
   };
 
+  const co=useCompany();
+  const accent=co?.accentColor||C.gold;
   const allTradeOptions = [...new Set([...companies.map(c=>c.name),...trades])].sort();
+  // All assignable people = current user + any team members
+  const assignableMembers = [
+    ...(userName?[{id:"__self__",name:userName}]:[]),
+    ...(teamMembers||[]).filter(m=>m.name!==userName),
+  ];
+
+  const toggleAssign = name => {
+    setMyTaskAssign(prev => prev.includes(name) ? prev.filter(n=>n!==name) : [...prev,name]);
+  };
 
   return(<Modal onClose={onCancel}><div style={{padding:18}}>
     <h2 style={{...DISP,fontSize:26,margin:"0 0 13px"}}>New Punch Item</h2>
@@ -2114,6 +2156,30 @@ function NewTaskModal({userName,lockedProject,projects,companies,trades,savePhot
       <div style={{gridColumn:"1 / -1"}}><Lbl>Photos</Lbl><Btn kind="ghost" style={{width:"100%"}} onClick={()=>fileRef.current.click()}>📷 Add photo</Btn><input ref={fileRef} type="file" accept="image/*" capture="environment" onChange={hFile} style={{display:"none"}}/></div>
     </div>
     {photos.length>0&&<div style={{display:"flex",gap:7,marginTop:10,flexWrap:"wrap"}}>{photos.map((p,i)=><img key={i} src={p} alt="" style={{width:66,height:66,objectFit:"cover",borderRadius:7}}/>)}</div>}
+
+    {/* My Tasks assignment */}
+    {assignableMembers.length>0&&(
+      <div style={{marginTop:14,padding:"13px 14px",background:"#FFFBF0",border:`1.5px solid ${accent}`,borderRadius:10}}>
+        <div style={{display:"flex",alignItems:"center",gap:7,marginBottom:10}}>
+          <span style={{fontSize:14}}>📋</span>
+          <div style={{...CAPT,fontSize:10,fontWeight:700,color:C.taupe}}>Add to My Tasks</div>
+          <span style={{fontSize:12,color:C.stone,fontWeight:400}}>— appears on dashboard</span>
+        </div>
+        <div style={{display:"flex",gap:7,flexWrap:"wrap"}}>
+          {assignableMembers.map(m=>{
+            const active=myTaskAssign.includes(m.name);
+            return(
+              <button key={m.id} onClick={()=>toggleAssign(m.name)}
+                style={{padding:"7px 13px",borderRadius:20,border:`1.5px solid ${active?accent:C.line}`,background:active?accent:"#fff",color:active?"#2E2B28":C.taupe,fontSize:13,fontWeight:active?700:400,cursor:"pointer"}}>
+                {active?"✓ ":""}{m.name=== userName?"Me ("+userName+")":m.name}
+              </button>
+            );
+          })}
+        </div>
+        {myTaskAssign.length>0&&<div style={{fontSize:11.5,color:C.taupe,marginTop:7}}>This task will appear under My Tasks on the dashboard for: <b style={{color:C.ink}}>{myTaskAssign.join(", ")}</b></div>}
+      </div>
+    )}
+
     <div style={{display:"flex",gap:9,marginTop:16,justifyContent:"flex-end"}}>
       <Btn kind="ghost" onClick={onCancel}>Cancel</Btn>
       <Btn disabled={!ok||creating} style={{opacity:!ok||creating?0.4:1}} onClick={create}>
