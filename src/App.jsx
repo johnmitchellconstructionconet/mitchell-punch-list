@@ -1542,6 +1542,7 @@ function TaskDetail({taskId,tasks:allTasks,userName,loadPhoto,savePhoto,requestA
     ...(trades||[]),
   ].filter((v,i,a)=>a.indexOf(v)===i);
   const tradeInfo=companies?.find(c=>c.name===task.trade);
+  const taskProject=projects?.find(p=>p.name===task.project);
 
   const addPhoto=async e=>{const file=e.target.files[0];e.target.value="";if(!file)return;const c=await compress(file);requestAnnotate(c,async ann=>{const pid=await savePhoto(ann);onUpdate({photos:[...(task.photos||[]),pid]});});};
   const saveEdit=()=>{onUpdate({area:editF.area.trim(),description:editF.description.trim(),trade:editF.trade.trim(),priority:editF.priority,dueDate:editF.dueDate});setEditing(false);};
@@ -1623,12 +1624,38 @@ function TaskDetail({taskId,tasks:allTasks,userName,loadPhoto,savePhoto,requestA
         {/* Task Details */}
         <TaskSection title="Task Details">
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"10px 16px"}}>
-            <div><div style={{...CAPT,fontSize:9.5,color:C.stone,marginBottom:3}}>Assignee</div><div style={{fontWeight:700}}>{task.trade||"—"}</div>{tradeInfo?.contactName&&<div style={{fontSize:12,color:C.taupe}}>{tradeInfo.contactName}</div>}{tradeInfo?.phone&&<div style={{fontSize:12,color:C.taupe}}>{tradeInfo.phone}</div>}</div>
+            {/* Assignee with call button */}
+            <div>
+              <div style={{...CAPT,fontSize:9.5,color:C.stone,marginBottom:3}}>Assignee</div>
+              <div style={{fontWeight:700}}>{task.trade||"—"}</div>
+              {tradeInfo?.contactName&&<div style={{fontSize:12,color:C.taupe}}>{tradeInfo.contactName}</div>}
+              {tradeInfo?.phone&&(
+                <a href={`tel:${tradeInfo.phone.replace(/\D/g,"")}`}
+                  style={{display:"inline-flex",alignItems:"center",gap:5,marginTop:4,padding:"5px 10px",background:C.mist,border:`1px solid ${C.line}`,borderRadius:20,textDecoration:"none",color:C.ink,fontSize:12,fontWeight:600}}>
+                  <span style={{fontSize:13}}>📞</span>{tradeInfo.phone}
+                </a>
+              )}
+            </div>
             <div><div style={{...CAPT,fontSize:9.5,color:C.stone,marginBottom:3}}>Location</div><div style={{fontWeight:700}}>{task.area||"—"}</div></div>
             <div><div style={{...CAPT,fontSize:9.5,color:C.stone,marginBottom:3}}>Priority</div><div style={{fontWeight:700,color:PRI_FG[task.priority]}}>{task.priority}</div></div>
             <div><div style={{...CAPT,fontSize:9.5,color:C.stone,marginBottom:3}}>Due date</div><div style={{fontWeight:700,color:overdue?C.rust:C.ink}}>{fmtDate(task.dueDate)}{overdue?" ⚠":""}</div></div>
             <div><div style={{...CAPT,fontSize:9.5,color:C.stone,marginBottom:3}}>Reported by</div><div style={{fontWeight:700}}>{task.createdBy||"—"}</div></div>
-            <div><div style={{...CAPT,fontSize:9.5,color:C.stone,marginBottom:3}}>Reported on</div><div style={{fontWeight:700}}>{fmtDate(new Date(task.createdAt).toISOString().slice(0,10))}</div></div>
+            {/* Site contact with call button */}
+            <div>
+              <div style={{...CAPT,fontSize:9.5,color:C.stone,marginBottom:3}}>Site contact</div>
+              {taskProject?.siteContact
+                ? <>
+                    <div style={{fontWeight:700,fontSize:13}}>{taskProject.siteContact}</div>
+                    {taskProject.sitePhone&&(
+                      <a href={`tel:${taskProject.sitePhone.replace(/\D/g,"")}`}
+                        style={{display:"inline-flex",alignItems:"center",gap:5,marginTop:4,padding:"5px 10px",background:"#EAF2E8",border:`1px solid ${C.sage}`,borderRadius:20,textDecoration:"none",color:C.sage,fontSize:12,fontWeight:600}}>
+                        <span style={{fontSize:13}}>📞</span>{taskProject.sitePhone}
+                      </a>
+                    )}
+                  </>
+                : <div style={{fontWeight:700,fontSize:13,color:C.taupe}}>—</div>
+              }
+            </div>
           </div>
           {task.approval==="Approved"&&(
             <div style={{marginTop:12,padding:"9px 12px",background:"#EAF2E8",border:`1.5px solid ${C.sage}`,borderRadius:8,color:C.sage,fontWeight:700,fontSize:13}}>
