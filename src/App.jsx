@@ -679,12 +679,22 @@ function InternalApp() {
   const emailMap  = Object.fromEntries(companies.filter(c=>c.email).map(c=>[c.name,c.email]));
   const currProj  = projects.find(p=>p.name===currentJob);
 
+  const PRI_ORDER = {High:0, Medium:1, Low:2};
   const visible = tasks
     .filter(t=>(!currentJob||currentJob==="ALL")?true:t.project===currentJob)
     .filter(t=>filters.status==="All"||t.status===filters.status)
     .filter(t=>filters.trade==="All"||t.trade===filters.trade)
     .filter(t=>!filters.q||(t.description+" "+t.area+" "+t.project+" "+t.trade).toLowerCase().includes(filters.q.toLowerCase()))
-    .sort((a,b)=>(a.status==="Done")-(b.status==="Done")||(a.dueDate||"9999").localeCompare(b.dueDate||"9999"));
+    .sort((a,b)=>{
+      // Done tasks always sink to bottom
+      const doneDiff = (a.status==="Done")-(b.status==="Done");
+      if(doneDiff!==0) return doneDiff;
+      // Then sort by priority
+      const priDiff = (PRI_ORDER[a.priority]??1)-(PRI_ORDER[b.priority]??1);
+      if(priDiff!==0) return priDiff;
+      // Then by due date
+      return (a.dueDate||"9999").localeCompare(b.dueDate||"9999");
+    });
 
   const openTask = tasks.find(t=>t.id===openTaskId);
 
@@ -1219,9 +1229,44 @@ function InternalToolbar({filters,setFilters,trades,taskMode,setTaskMode,onNew,o
 
 function TaskList({tasks,showProject,onOpen,loadPhoto}){
   if(!tasks.length) return <div style={{padding:50,textAlign:"center",color:C.taupe}}>No tasks match. Adjust the filters or create the first punch item.</div>;
-  return(
+
+  const PRI_ORDER_LIST = ["High","Medium","Low"];
+  const PRI_COLORS = {High:C.rust, Medium:C.amber, Low:C.taupe};
+  const PRI_BG     = {High:"#FDF2F0", Medium:"#FDF8EF", Low:"#F5F4F2"};
+
+  // Group tasks by priority, preserving done-tasks-last order within each group
+  const groups = PRI_ORDER_LIST.map(pri=>({
+    priority: pri,
+    tasks: tasks.filter(t=>t.priority===pri),
+  })).filter(g=>g.tasks.length>0);
+
+  // If no priority data at all, fall back to flat list
+  const hasPriority = tasks.some(t=>t.priority);
+  if(!hasPriority) return(
     <div style={{padding:12,display:"grid",gap:9,gridTemplateColumns:"repeat(auto-fill,minmax(300px,1fr))"}}>
       {tasks.map(t=><TaskCard key={t.id} task={t} showProject={showProject} onOpen={()=>onOpen(t.id)} loadPhoto={loadPhoto}/>)}
+    </div>
+  );
+
+  return(
+    <div style={{padding:"12px 12px 24px"}}>
+      {groups.map((g,gi)=>(
+        <div key={g.priority} style={{marginBottom:gi<groups.length-1?28:0}}>
+          {/* Priority section header */}
+          <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12}}>
+            <div style={{display:"flex",alignItems:"center",gap:7,background:PRI_BG[g.priority],border:`1px solid ${PRI_COLORS[g.priority]}22`,borderRadius:6,padding:"5px 12px"}}>
+              <span style={{width:8,height:8,borderRadius:"50%",background:PRI_COLORS[g.priority],display:"inline-block",flexShrink:0}}/>
+              <span style={{...CAPT,fontSize:11,fontWeight:700,color:PRI_COLORS[g.priority]}}>{g.priority} Priority</span>
+              <span style={{fontSize:12,color:PRI_COLORS[g.priority],opacity:0.7,fontWeight:600}}>{g.tasks.length}</span>
+            </div>
+            <div style={{flex:1,height:1,background:`${PRI_COLORS[g.priority]}33`}}/>
+          </div>
+          {/* Cards grid */}
+          <div style={{display:"grid",gap:9,gridTemplateColumns:"repeat(auto-fill,minmax(300px,1fr))"}}>
+            {g.tasks.map(t=><TaskCard key={t.id} task={t} showProject={showProject} onOpen={()=>onOpen(t.id)} loadPhoto={loadPhoto}/>)}
+          </div>
+        </div>
+      ))}
     </div>
   );
 }
