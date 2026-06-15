@@ -567,8 +567,15 @@ function InternalApp() {
     await upsertTask(task);
   };
   const updateTaskById = async (id, patch) => {
-    setTasks(t=>t.map(x=>x.id===id?{...x,...patch}:x));
-    await upsertTask({...tasks.find(x=>x.id===id)||{},...patch,id});
+    let merged;
+    setTasks(t=>{
+      const existing=t.find(x=>x.id===id)||{};
+      merged={...existing,...patch,id};
+      return t.map(x=>x.id===id?merged:x);
+    });
+    // Small delay to let merged be set from the functional update
+    await new Promise(r=>setTimeout(r,0));
+    if(merged) await upsertTask(merged);
   };
   const removeTask = async (id) => {
     setTasks(t=>t.filter(x=>x.id!==id));
