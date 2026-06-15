@@ -44,47 +44,33 @@ export async function getTasks() {
 export async function upsertTask(task) {
   const payload = taskToDb(task);
 
-  // First try UPDATE (works for existing rows even with strict RLS)
-  const { data: updateData, error: updateError } = await supabase
+  // SELECT first — .upsert() is blocked by RLS on existing rows without error.
+  const { data: existing, error: selectError } = await supabase
     .from("tasks")
-    .update(payload)
+    .select("id")
     .eq("id", payload.id)
-    .select("id");
+    .maybeSingle();
 
-  if (updateError) {
-    console.error("upsertTask UPDATE failed:", JSON.stringify(updateError));
-    // Fall back to INSERT for brand-new tasks
+  if (selectError) {
+    throw new Error("Select failed: " + (selectError.message || JSON.stringify(selectError)));
+  }
+
+  if (existing) {
+    const { error: updateError } = await supabase
+      .from("tasks")
+      .update(payload)
+      .eq("id", payload.id);
+    if (updateError) {
+      throw new Error("Update failed: " + (updateError.message || JSON.stringify(updateError)));
+    }
+  } else {
     const { error: insertError } = await supabase
       .from("tasks")
       .insert(payload);
     if (insertError) {
-      console.error("upsertTask INSERT also failed:", JSON.stringify(insertError));
-      throw new Error(insertError.message || JSON.stringify(insertError));
-    }
-    return;
-  }
-
-  // If update matched 0 rows it's a new task — insert it
-  if (!updateData || updateData.length === 0) {
-    const { error: insertError } = await supabase
-      .from("tasks")
-      .insert(payload);
-    if (insertError) {
-      console.error("upsertTask INSERT (new task) failed:", JSON.stringify(insertError));
-      throw new Error(insertError.message || JSON.stringify(insertError));
+      throw new Error("Insert failed: " + (insertError.message || JSON.stringify(insertError)));
     }
   }
-}
-
-// Direct update — used by RejectionPanel to bypass React state chain
-export async function updateTask(task) {
-  const payload = taskToDb(task);
-  const { error } = await supabase
-    .from("tasks")
-    .update(payload)
-    .eq("id", task.id);
-  if (error) console.error("updateTask error:", JSON.stringify(error));
-  return !error;
 }
 
 export async function deleteTask(id) {
@@ -134,7 +120,7 @@ export async function savePhoto(id, dataUrl) {
   if (error) console.error("savePhoto", error);
 }
 
-// ─── Settings (team code + company settings) ─────────────────────
+// ─── Settings ────────────────────────────────────────────────────
 
 export async function getSetting(key) {
   const { data, error } = await supabase
@@ -165,7 +151,24 @@ export async function wipeAll() {
   ]);
 }
 
+// ─── Helpers ─────────────────────────────────────────────────────
+
+// Parse @mentions out of comment text so the bell works without a DB column
+function extractMentions(comments) {
+  const re = /@([\w\s.'-]+?)(?=\s|$|[^a-zA-Z0-9\s.'-])/g;
+  const out = new Set();
+  for (const c of (comments || [])) {
+    let m;
+    re.lastIndex = 0;
+    const text = c.text || "";
+    while ((m = re.exec(text)) !== null) out.add(m[1].trim());
+  }
+  return [...out];
+}
+
 // ─── DB row ↔ app object mappers ─────────────────────────────────
+// taskToDb writes ONLY columns that exist in the Supabase tasks table.
+// mentions is derived in memory from comments — no DB column needed.
 
 function dbToProject(r) {
   return {
@@ -194,6 +197,7 @@ function projectToDb(p) {
 }
 
 function dbToTask(r) {
+  const comments = r.comments || [];
   return {
     id:            r.id,
     project:       r.project,
@@ -205,17 +209,21 @@ function dbToTask(r) {
     status:        r.status         || "Reported",
     approval:      r.approval       || "Pending",
     photos:        r.photos         || [],
-    comments:      r.comments       || [],
+    comments,
     statusHistory: r.status_history || [],
     createdBy:     r.created_by,
     createdAt:     r.created_at,
-    approvedBy:    r.approved_by,
-    approvedAt:    r.approved_at,
-    mentions:      r.mentions       || [],
+    approvedBy:    r.approved_by    || null,
+    approvedAt:    r.approved_at    || null,
+    // mentions derived from comments — no DB column required
+    mentions:      extractMentions(comments),
   };
 }
 
 function taskToDb(t) {
+  // IMPORTANT: only include columns that exist in your Supabase tasks table.
+  // Do NOT add mentions, after_photos, rejection_reason, rejection_count,
+  // rejection_history, or header_photo_id — those columns do not exist.
   return {
     id:             t.id,
     project:        t.project,
@@ -233,7 +241,6 @@ function taskToDb(t) {
     created_at:     t.createdAt,
     approved_by:    t.approvedBy    || null,
     approved_at:    t.approvedAt    || null,
-    mentions:       t.mentions      || [],
   };
 }
 
