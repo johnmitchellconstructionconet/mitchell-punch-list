@@ -178,6 +178,7 @@ function dbToTask(r) {
     rejectionReason:        r.rejection_reason || null,
     rejectionCount:         r.rejection_count  || 0,
     mentions:               r.mentions         || [],
+    rejectionHistory:       r.rejection_history|| [],
   };
 }
 
@@ -203,6 +204,7 @@ function taskToDb(t) {
     rejection_reason: t.rejectionReason || null,
     rejection_count:  t.rejectionCount  || 0,
     mentions:         t.mentions        || [],
+    rejection_history:t.rejectionHistory|| [],
   };
 }
 
