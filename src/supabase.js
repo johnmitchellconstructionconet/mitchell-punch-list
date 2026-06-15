@@ -42,10 +42,17 @@ export async function getTasks() {
 }
 
 export async function upsertTask(task) {
+  const payload = taskToDb(task);
+  // Use update (not upsert) to ensure all columns including jsonb arrays are written
   const { error } = await supabase
     .from("tasks")
-    .upsert(taskToDb(task), { onConflict: "id" });
-  if (error) console.error("upsertTask", error);
+    .update(payload)
+    .eq("id", task.id);
+  if (error) {
+    // Fallback to insert if update fails (new record)
+    const { error: insertError } = await supabase.from("tasks").insert(payload);
+    if (insertError) console.error("upsertTask error:", JSON.stringify(insertError));
+  }
 }
 
 export async function deleteTask(id) {
