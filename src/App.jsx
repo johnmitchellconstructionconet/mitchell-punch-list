@@ -544,11 +544,8 @@ function InternalApp() {
 
   useEffect(()=>{ if(authed) loadAll(); },[authed,loadAll]);
 
-  useEffect(()=>{
-    if(!authed) return;
-    const interval = setInterval(()=>loadAll(), 30000);
-    return ()=>clearInterval(interval);
-  },[authed,loadAll]);
+  // Auto-refresh removed — manual sync button available in header.
+  // Auto-refresh was reverting unsaved or in-flight changes.
 
   // ── Persist helpers ──
   const pP = async (next) => {
@@ -571,8 +568,15 @@ function InternalApp() {
   const updateTaskById = async (id, patch) => {
     const existing = tasksRef.current.find(x=>x.id===id) || {};
     const merged = {...existing, ...patch, id};
+    // Update UI immediately (optimistic)
     setTasks(t=>t.map(x=>x.id===id ? merged : x));
-    await upsertTask(merged);
+    // Save to DB — if it fails, reload from DB to restore truth
+    try {
+      await upsertTask(merged);
+    } catch(e) {
+      console.error("Save failed, reloading:", e);
+      loadAll();
+    }
   };
   const removeTask = async (id) => {
     setTasks(t=>t.filter(x=>x.id!==id));
