@@ -78,7 +78,7 @@ const STATUSES = ["Reported","Scheduled","Done"];
 const APPROVAL_META = {
   Pending:  { bg:"#F5F3F0", fg:"#8A8279", label:"Pending"  },
   Approved: { bg:"#EAF2E8", fg:"#4A7A40", label:"Approved" },
-  Rejected: { bg:"#F9EDEC", fg:"#B04035", label:"Rejected" },
+  Rejected: { bg:"#FFF3CD", fg:"#856404", label:"Needs Corrections" },
 };
 const PRIORITIES = ["High","Medium","Low"];
 const PRI_FG = { High:C.rust, Medium:C.amber, Low:C.taupe };
@@ -417,11 +417,11 @@ function PubTaskDetail({task,loadPhoto,onLightbox,onClose,onUpdate,trades=[]}){
           )}
 
           {/* Comments */}
-          {(task.comments||[]).filter(c=>!c.text.startsWith("REJECTED:")&&!c.text.startsWith("After / correction")).length>0&&(
+          {(task.comments||[]).filter(c=>!c.text.startsWith("After / correction")).length>0&&(
             <div style={{marginBottom:16}}>
               <div style={{...CAPT,fontSize:11,fontWeight:600,color:C.taupe,marginBottom:8}}>Notes & comments</div>
               <div style={{display:"grid",gap:7}}>
-                {(task.comments||[]).filter(c=>!c.text.startsWith("REJECTED:")&&!c.text.startsWith("After / correction")).map(c=>(
+                {(task.comments||[]).filter(c=>!c.text.startsWith("After / correction")).map(c=>(
                   <div key={c.id} style={{background:"#fff",border:`1px solid ${C.line}`,borderRadius:8,padding:"9px 12px",borderLeft:`3px solid ${c.role==="trade"?accent:C.line}`}}>
                     <div style={{fontSize:12,color:C.taupe,marginBottom:2}}>
                       <b style={{color:c.role==="trade"?accent:C.ink}}>{c.author}</b>
@@ -1066,7 +1066,7 @@ function Dashboard({projects,tasks,onOpenJob,onAllJobs,onCalendar,onNewJob,onDir
 
       <div style={{display:"grid",gridTemplateColumns:"repeat(3,minmax(0,1fr))",gap:10,marginBottom:14}}>
         <StatCard label="Open items" value={tot.open} color={C.ink}/>
-        <StatCard label="Approval rejected" value={tot.rej} color={tot.rej?C.rust:C.taupe}/>
+        <StatCard label="Needs corrections" value={tot.rej} color={tot.rej?C.rust:C.taupe}/>
         <StatCard label="Overdue" value={tot.over} color={tot.over?C.rust:C.taupe}/>
       </div>
 
@@ -1218,7 +1218,7 @@ function TaskCard({task,showProject,onOpen,loadPhoto}){
       </div>
 
       {/* Section 4 — Photos + comments */}
-      {((task.photos||[]).length>0||(task.comments||[]).filter(c=>!c.text.startsWith("REJECTED:")&&!c.text.startsWith("After / correction")).length>0)&&(
+      {((task.photos||[]).length>0||(task.comments||[]).filter(c=>!c.text.startsWith("After / correction")).length>0)&&(
         <div style={{padding:"8px 13px",display:"flex",alignItems:"center",gap:8,background:"#FAFAF8"}}>
           {(task.photos||[]).length>0&&(
             <div style={{display:"flex",gap:4,flex:1}}>
@@ -1226,7 +1226,7 @@ function TaskCard({task,showProject,onOpen,loadPhoto}){
               {(task.photos||[]).length>4&&<div style={{width:48,height:48,borderRadius:7,background:C.mist,display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,color:C.taupe,fontWeight:600}}>+{task.photos.length-4}</div>}
             </div>
           )}
-          {(()=>{const n=(task.comments||[]).filter(c=>!c.text.startsWith("REJECTED:")&&!c.text.startsWith("After / correction")).length;return n>0&&<div style={{fontSize:12,color:C.taupe,whiteSpace:"nowrap",marginLeft:"auto"}}>💬 {n} comment{n!==1?"s":""}</div>;})()}
+          {(()=>{const n=(task.comments||[]).filter(c=>!c.text.startsWith("After / correction")).length;return n>0&&<div style={{fontSize:12,color:C.taupe,whiteSpace:"nowrap",marginLeft:"auto"}}>💬 {n} comment{n!==1?"s":""}</div>;})()}
         </div>
       )}
     </div>
@@ -1381,7 +1381,7 @@ function TaskDetail({task,userName,loadPhoto,savePhoto,requestAnnotate,onLightbo
     {ts:task.createdAt,label:"Task reported",by:task.createdBy||"Team",color:C.taupe},
     ...(task.statusHistory||[]).map(h=>({
       ts:h.ts,
-      label:h.status==="Rejected"&&h.reason?`Rejected: ${h.reason}`:`Status → ${h.status}`,
+      label:`Status → ${h.status}`,
       by:h.by,
       color:h.status==="Rejected"?C.rust:h.status==="Approved"||h.status==="Re-submitted"?C.sage:STATUS_META[h.status]?.fg||C.taupe
     })),
@@ -1474,7 +1474,7 @@ function TaskDetail({task,userName,loadPhoto,savePhoto,requestAnnotate,onLightbo
           <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
             <span style={{...CAPT,fontSize:10,color:C.taupe,fontWeight:600}}>Approval:</span>
             <Btn kind="green" style={{padding:"7px 13px",fontSize:13}} onClick={()=>onUpdate({approval:"Approved",status:"Done",approvedBy:userName,approvedAt:Date.now(),statusHistory:[...(task.statusHistory||[]),{status:"Approved",by:userName,ts:Date.now()}]})}>✓ Approve</Btn>
-            <Btn kind="red" style={{padding:"7px 13px",fontSize:13}} onClick={()=>{if(!window.confirm("Mark as rejected?"))return;onUpdate({approval:"Rejected",status:"Reported",approvedBy:null,approvedAt:null,rejectionCount:(task.rejectionCount||0)+1,statusHistory:[...(task.statusHistory||[]),{status:"Rejected",by:userName,ts:Date.now()}]});}}>✗ Reject</Btn>
+            <Btn kind="ghost" style={{padding:"7px 13px",fontSize:13,border:`1px solid ${C.amber}`,color:C.amber}} onClick={()=>{if(!window.confirm("Mark as Needs Corrections?"))return;onUpdate({approval:"Rejected",status:"Reported",approvedBy:null,approvedAt:null,statusHistory:[...(task.statusHistory||[]),{status:"Needs Corrections",by:userName,ts:Date.now()}]});}}>⚑ Needs Corrections</Btn>
             {task.approval==="Approved"&&<Btn kind="ghost" style={{padding:"7px 13px",fontSize:13}} onClick={()=>onUpdate({approval:"Pending",status:"Reported",approvedBy:null,approvedAt:null})}>Clear</Btn>}
             <div style={{flex:1}}/>
             <Btn kind="ghost" style={{color:C.rust,fontSize:13,padding:"7px 13px"}} onClick={()=>window.confirm("Delete this task?")&&onDelete()}>Delete</Btn>
@@ -2246,16 +2246,8 @@ function Report({tasks,jobLabel,filters,userName,loadPhoto,onBack,project}){
         for(const t of list){
           const img=t.photos?.[0]&&pm[t.photos[0]]?`<img src="${pm[t.photos[0]]}" style="width:50px;height:50px;object-fit:cover;border-radius:5px">`:"—";
           const appr=t.approval==="Approved"?`${fmtDate(new Date(t.approvedAt).toISOString().slice(0,10))} — ${esc(t.approvedBy)}`:"—";
-          const am={Approved:{bg:"#E0EDDB",fg:"#5A8A4F"},Rejected:{bg:"#F2DEDA",fg:"#A83B2E"},Pending:{bg:"#F0EDE8",fg:"#9A7B4F"}}[t.approval||"Pending"]||{bg:"#F0EDE8",fg:"#9A7B4F"};
+          const am={Approved:{bg:"#E0EDDB",fg:"#5A8A4F"},Rejected:{bg:"#FFF3CD",fg:"#856404"},Pending:{bg:"#F0EDE8",fg:"#9A7B4F"}}[t.approval||"Pending"]||{bg:"#F0EDE8",fg:"#9A7B4F"};
           body+=`<tr><td>${img}</td><td>${esc(t.description)}</td><td>${esc(t.trade)}</td><td style="color:${PRI_FG[t.priority]};font-weight:600">${t.priority}</td><td>${fmtDate(t.dueDate)}</td><td><span style="${sm(t.status)}">${t.status}</span></td><td><span style="background:${am.bg};color:${am.fg};padding:2px 8px;border-radius:5px;font-weight:700;font-size:11px">${t.approval||"Pending"}</span></td><td>${appr}</td></tr>`;
-          // Rejection details row
-          if(t.approval==="Rejected"&&(t.rejectionReason||(t.afterPhotos||[]).length>0)){
-            const afterImgs=(t.afterPhotos||[]).slice(0,3).map(pid=>pm[pid]?`<img src="${pm[pid]}" style="width:48px;height:48px;object-fit:cover;border-radius:5px;margin-right:4px">`:"").join("");
-            body+=`<tr><td colspan="8" style="background:#FDF0EF;padding:8px 10px;border-left:3px solid #B04035">`;
-            if(t.rejectionReason) body+=`<div style="color:#B04035;font-weight:700;font-size:12px;margin-bottom:${afterImgs?"6px":"0"}">✗ Rejection reason: ${esc(t.rejectionReason)}</div>`;
-            if(afterImgs) body+=`<div style="font-size:11px;color:#8A8279;margin-bottom:4px;font-weight:600;text-transform:uppercase;letter-spacing:0.06em">Reference photos</div><div>${afterImgs}</div>`;
-            body+=`</td></tr>`;
-          }
         }
         body+=`</tbody></table>`;
       }
@@ -2298,4 +2290,3 @@ function Report({tasks,jobLabel,filters,userName,loadPhoto,onBack,project}){
     </div>
   </div>);
 }
-                                              
