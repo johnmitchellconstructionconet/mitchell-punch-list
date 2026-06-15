@@ -1745,7 +1745,7 @@ function TaskDetail({taskId,tasks:allTasks,userName,loadPhoto,savePhoto,requestA
             </div>
             <div style={{display:"flex",gap:9,marginTop:11,justifyContent:"flex-end"}}>
               <Btn kind="ghost" onClick={()=>setEditing(false)}>Cancel</Btn>
-              <Btn onClick={saveEdit} disabled={editSaving||!editF.area.trim()||!editF.description.trim()||!editF.trades.length} style={{opacity:editSaving||!editF.area.trim()||!editF.description.trim()||!editF.trade.length?0.5:1}}>
+              <Btn onClick={saveEdit} disabled={editSaving||!editF.area.trim()||!editF.description.trim()||!editF.trades.length} style={{opacity:editSaving||!editF.area.trim()||!editF.description.trim()||!editF.trades.length?0.5:1}}>
                 {editSaving?<span style={{display:"flex",alignItems:"center",gap:6}}><Spinner/>Saving…</span>:"Save changes"}
               </Btn>
             </div>
