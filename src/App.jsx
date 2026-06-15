@@ -561,12 +561,15 @@ function InternalApp() {
   const updateTaskById = async (id, patch) => {
     const existing = tasksRef.current.find(x=>x.id===id) || {};
     const merged = {...existing, ...patch, id};
+    // Optimistic update — show change immediately
     setTasks(t=>t.map(x=>x.id===id ? merged : x));
     try {
       await upsertTask(merged);
     } catch(e) {
-      console.error("Save failed, reloading:", e);
-      loadAll();
+      console.error("Save failed:", e);
+      // Revert ONLY this task back to its pre-patch state so the user knows it failed
+      setTasks(t=>t.map(x=>x.id===id ? existing : x));
+      window.alert("Save failed — check your internet connection and try again.\n\nDetails: " + (e.message || e));
     }
   };
   const removeTask = async (id) => {
@@ -680,14 +683,15 @@ function InternalApp() {
         projects={projects.filter(p=>p.status==="Active")} trades={tradeOpts} companies={companies}
         savePhoto={savePhoto} requestAnnotate={(d,cb)=>setAnnotate({dataUrl:d,onSave:cb})}
         onCancel={()=>setShowNew(false)} onCreate={async t=>{await addTask(t);setShowNew(false);}}/>}
-      {openTask&&<TaskDetail key={openTask.id} task={openTask} userName={user}
+      {openTask&&<TaskDetail key={openTask.id} taskId={openTask.id} tasks={tasks} userName={user}
         loadPhoto={loadPhoto} savePhoto={savePhoto}
         trades={trades} projects={projects} companies={companies}
         requestAnnotate={(d,cb)=>setAnnotate({dataUrl:d,onSave:cb})}
         onLightbox={setLightbox} onClose={()=>setOpenTaskId(null)}
         onUpdate={async patch=>{
-          if(patch.status&&patch.status!==openTask.status) markNotif(openTask.trade,openTask.id);
-          await updateTaskById(openTask.id, patch);
+          const live = tasksRef.current.find(x=>x.id===openTaskId);
+          if(patch.status&&live&&patch.status!==live.status) markNotif(live.trade,live.id);
+          await updateTaskById(openTaskId, patch);
         }}
         onDelete={async()=>{await removeTask(openTask.id);setOpenTaskId(null);}}/>}
       {showMentions&&<MentionsModal userName={user} tasks={tasks} onOpenTask={id=>{setOpenTaskId(id);setShowMentions(false);}} onClose={()=>setShowMentions(false)}/>}
@@ -1336,7 +1340,9 @@ function TaskSection({title,children,noBorder,sectionAccent}){
   );
 }
 
-function TaskDetail({task,userName,loadPhoto,savePhoto,requestAnnotate,onLightbox,onClose,onUpdate,onDelete,trades,projects,companies}){
+function TaskDetail({taskId,tasks:allTasks,userName,loadPhoto,savePhoto,requestAnnotate,onLightbox,onClose,onUpdate,onDelete,trades,projects,companies}){
+  // Always read the live version from tasks array so status/approval reflect saves immediately
+  const task = allTasks.find(t=>t.id===taskId) || allTasks[0];
   const co=useCompany();
   const accent=co?.accentColor||C.gold;
   const [editing,setEditing]=useState(false);
