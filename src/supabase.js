@@ -43,13 +43,14 @@ export async function getTasks() {
 
 export async function upsertTask(task) {
   const payload = taskToDb(task);
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from("tasks")
-    .update(payload)
-    .eq("id", task.id);
+    .upsert(payload, { onConflict: "id" })
+    .select("id, approval, status");
   if (error) {
-    const { error: insertError } = await supabase.from("tasks").insert(payload);
-    if (insertError) console.error("upsertTask error:", JSON.stringify(insertError));
+    console.error("upsertTask ERROR:", JSON.stringify(error));
+  } else {
+    console.log("upsertTask OK — approval:", data?.[0]?.approval, "status:", data?.[0]?.status);
   }
 }
 
