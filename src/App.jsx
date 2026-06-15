@@ -1463,6 +1463,11 @@ function TaskDetail({task,userName,loadPhoto,savePhoto,requestAnnotate,onLightbo
     if(!(task.afterPhotos||[]).length){if(!window.confirm("No after photo added yet. Submit for re-approval anyway?"))return;}
     onUpdate({
       approval:"Pending",status:"Done",
+      // Explicitly preserve all rejection history so it's never lost
+      rejectionHistory:task.rejectionHistory||[],
+      rejectionReason:task.rejectionReason||null,
+      rejectionCount:task.rejectionCount||0,
+      afterPhotos:task.afterPhotos||[],
       statusHistory:[...(task.statusHistory||[]),{status:"Re-submitted",by:userName,ts:Date.now()}],
       comments:[...(task.comments||[]),{id:uid(),author:userName,role:"internal",text:"Re-submitted for approval after corrections.",ts:Date.now()}],
     });
@@ -1575,7 +1580,7 @@ function TaskDetail({task,userName,loadPhoto,savePhoto,requestAnnotate,onLightbo
           </div>
           <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
             <span style={{...CAPT,fontSize:10,color:C.taupe,fontWeight:600}}>Approval:</span>
-            <Btn kind="green" style={{padding:"7px 13px",fontSize:13}} onClick={()=>onUpdate({approval:"Approved",status:"Done",approvedBy:userName,approvedAt:Date.now(),statusHistory:[...(task.statusHistory||[]),{status:"Approved",by:userName,ts:Date.now()}]})}>✓ Approve</Btn>
+            <Btn kind="green" style={{padding:"7px 13px",fontSize:13}} onClick={()=>onUpdate({approval:"Approved",status:"Done",approvedBy:userName,approvedAt:Date.now(),rejectionHistory:task.rejectionHistory||[],rejectionReason:task.rejectionReason||null,rejectionCount:task.rejectionCount||0,afterPhotos:task.afterPhotos||[],statusHistory:[...(task.statusHistory||[]),{status:"Approved",by:userName,ts:Date.now()}]})}>✓ Approve</Btn>
             <Btn kind="red" style={{padding:"7px 13px",fontSize:13}} onClick={()=>setShowReject(v=>!v)}>✗ Reject</Btn>
             {task.approval==="Approved"&&<Btn kind="ghost" style={{padding:"7px 13px",fontSize:13}} onClick={()=>onUpdate({approval:"Pending",status:"Reported",approvedBy:null,approvedAt:null})}>Clear</Btn>}
             {isRejected&&<Btn kind="dark" style={{padding:"7px 13px",fontSize:13,background:C.sage}} onClick={handleReApproval}>↺ Re-submit for approval</Btn>}
@@ -1623,7 +1628,7 @@ function TaskDetail({task,userName,loadPhoto,savePhoto,requestAnnotate,onLightbo
         </TaskSection>
 
         {/* Rejection History — always shown once any rejection has occurred */}
-        {((task.rejectionHistory||[]).length>0||(task.afterPhotos||[]).length>0||task.rejectionReason)&&(
+        {((task.rejectionHistory||[]).length>0||(task.afterPhotos||[]).length>0||task.rejectionReason||task.rejectionCount>0)&&(
           <TaskSection title={`Rejection History (${(task.rejectionHistory||[]).length||1}×)`} sectionAccent={C.rust}>
             {/* Show each rejection event */}
             {(task.rejectionHistory||[]).length>0?(
