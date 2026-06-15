@@ -128,7 +128,22 @@ function JobLinkApp({ jobId }) {
   const [openId,      setOpenId]     = useState(null);
   const [lightbox,    setLightbox]   = useState(null);
   const [photoCache,  setPhotoCache] = useState({});
-  const [tradeFilter, setTradeFilter] = useState("All");
+
+  // Trade picker — read saved choice from sessionStorage so it persists across refreshes
+  // but resets when they close the tab (so next visit they can re-pick)
+  const storageKey = "punchlist_trade_" + jobId;
+  const [tradeFilter, setTradeFilter] = useState(() => {
+    try { return sessionStorage.getItem(storageKey) || ""; } catch { return ""; }
+  });
+  const [showTradePicker, setShowTradePicker] = useState(() => {
+    try { return !sessionStorage.getItem(storageKey); } catch { return true; }
+  });
+
+  const selectTrade = (trade) => {
+    try { sessionStorage.setItem(storageKey, trade); } catch {}
+    setTradeFilter(trade);
+    setShowTradePicker(false);
+  };
 
   const load = useCallback(async () => {
     setSyncing(true);
@@ -178,7 +193,8 @@ function JobLinkApp({ jobId }) {
   };
 
   const trades = [...new Set(tasks.map(t=>t.trade).filter(Boolean))].sort();
-  const filteredTasks = tradeFilter === "All" ? tasks : tasks.filter(t=>t.trade===tradeFilter);
+  const activeFilter = tradeFilter || "All";
+  const filteredTasks = activeFilter === "All" ? tasks : tasks.filter(t=>t.trade===activeFilter);
   const byArea = {};
   for (const t of filteredTasks) (byArea[t.area]=byArea[t.area]||[]).push(t);
   const openCount = filteredTasks.filter(t=>t.approval!=="Approved").length;
@@ -207,7 +223,7 @@ function JobLinkApp({ jobId }) {
       }
       body+=`</tbody></table>`;
     }
-    const tradeLabel=tradeFilter!=="All"?` — ${tradeFilter}`:"";
+    const tradeLabel=activeFilter!=="All"?` — ${activeFilter}`:"";
     const html=`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Punch List — ${esc(project.name)}</title>
 <style>@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Raleway:wght@400;500;600&display=swap');
 body{font-family:Raleway,sans-serif;color:#1C1A18;max-width:860px;margin:0 auto;padding:32px 24px}
@@ -240,6 +256,37 @@ ${body}
   return (
     <CompanyCtx.Provider value={coSettings}>
       <Shell>
+        {/* Full-screen trade picker — shown on first visit */}
+        {showTradePicker&&trades.length>0&&(
+          <div style={{position:"fixed",inset:0,zIndex:100,background:"rgba(28,26,24,0.7)",display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+            <div style={{background:C.paper,borderRadius:18,width:"100%",maxWidth:420,boxShadow:"0 20px 60px rgba(0,0,0,0.3)",overflow:"hidden"}}>
+              <div style={{padding:"28px 24px 20px",borderBottom:`1px solid ${C.line}`,textAlign:"center"}}>
+                {coSettings.logoUrl
+                  ? <img src={coSettings.logoUrl} alt="" style={{height:44,maxWidth:180,objectFit:"contain",display:"block",margin:"0 auto 14px"}}/>
+                  : <div style={{marginBottom:14}}><Wordmark size={30}/></div>
+                }
+                <div style={{...DISP,fontSize:22,fontWeight:600,lineHeight:1.2,marginBottom:6}}>{project.name}</div>
+                <div style={{fontSize:13,color:C.taupe}}>{[project.client,project.address].filter(Boolean).join(" · ")}</div>
+              </div>
+              <div style={{padding:"22px 24px"}}>
+                <div style={{...CAPT,fontSize:11,fontWeight:700,color:C.taupe,marginBottom:14,textAlign:"center"}}>Select your trade to see your items</div>
+                <div style={{display:"grid",gap:9}}>
+                  {trades.map(t=>(
+                    <button key={t} onClick={()=>selectTrade(t)}
+                      style={{width:"100%",padding:"14px 18px",borderRadius:10,border:`1.5px solid ${C.line}`,background:"#fff",color:C.ink,fontSize:15,fontWeight:600,cursor:"pointer",textAlign:"left",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                      {t}
+                      <span style={{color:coSettings.accentColor||C.gold,fontSize:18}}>→</span>
+                    </button>
+                  ))}
+                </div>
+                <button onClick={()=>selectTrade("All")}
+                  style={{width:"100%",marginTop:12,padding:"11px 18px",borderRadius:10,border:"none",background:"transparent",color:C.taupe,fontSize:13,cursor:"pointer",fontWeight:500}}>
+                  Show all trades
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
         <div style={{background:C.card,borderBottom:`1px solid ${C.line}`,padding:"12px 18px",display:"flex",alignItems:"center",gap:14,flexWrap:"wrap"}}>
           <Wordmark size={28}/>
           <div style={{flex:1}}/>
@@ -255,21 +302,32 @@ ${body}
             <PubStat label="Completed"    value={doneCount} color={doneCount>0?C.sage:C.taupe}/>
             <PubStat label="Total"        value={filteredTasks.length} color={C.taupe}/>
           </div>
-          {trades.length>1&&(
-            <div style={{marginTop:12,display:"flex",alignItems:"center",gap:10}}>
-              <label style={{...CAPT,fontSize:10,fontWeight:700,color:C.stone,whiteSpace:"nowrap"}}>Filter by trade</label>
-              <select value={tradeFilter} onChange={e=>setTradeFilter(e.target.value)}
-                style={{background:"#fff",border:`1px solid ${C.line}`,borderRadius:8,padding:"9px 12px",fontSize:14,color:C.ink,maxWidth:280,width:"100%"}}>
-                <option value="All">All trades</option>
-                {trades.map(t=><option key={t} value={t}>{t}</option>)}
-              </select>
+          {trades.length>0&&(
+            <div style={{marginTop:12,display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+              <div style={{display:"flex",gap:6,flexWrap:"wrap",flex:1}}>
+                <button onClick={()=>selectTrade("All")}
+                  style={{padding:"7px 14px",borderRadius:20,border:`1.5px solid ${activeFilter==="All"?C.ink:C.line}`,background:activeFilter==="All"?C.ink:"#fff",color:activeFilter==="All"?"#fff":C.ink,fontSize:13,fontWeight:600,cursor:"pointer",whiteSpace:"nowrap"}}>
+                  All trades
+                </button>
+                {trades.map(t=>(
+                  <button key={t} onClick={()=>selectTrade(t)}
+                    style={{padding:"7px 14px",borderRadius:20,border:`1.5px solid ${activeFilter===t?(coSettings.accentColor||C.gold):C.line}`,background:activeFilter===t?(coSettings.accentColor||C.gold):"#fff",color:activeFilter===t?"#2E2B28":C.ink,fontSize:13,fontWeight:600,cursor:"pointer",whiteSpace:"nowrap"}}>
+                    {t}
+                  </button>
+                ))}
+              </div>
             </div>
           )}
-          <p style={{fontSize:12.5,color:C.stone,marginTop:10,marginBottom:0}}>Read-only view. Contact your project manager with questions.</p>
+          <p style={{fontSize:12.5,color:C.stone,marginTop:10,marginBottom:0}}>
+            {activeFilter!=="All"
+              ? <span>Showing your items only — <button onClick={()=>selectTrade("All")} style={{background:"none",border:"none",color:coSettings.accentColor||C.gold,fontWeight:700,cursor:"pointer",fontSize:12.5,padding:0}}>show all</button></span>
+              : "Read-only view. Contact your project manager with questions."
+            }
+          </p>
           </div>
         </div>
         <div style={{maxWidth:900,margin:"0 auto",padding:"16px 14px"}}>
-          {filteredTasks.length===0&&<div style={{padding:40,textAlign:"center",color:C.taupe}}>{tradeFilter==="All"?"No punch items for this job yet.":`No items assigned to ${tradeFilter} on this job.`}</div>}
+          {filteredTasks.length===0&&<div style={{padding:40,textAlign:"center",color:C.taupe}}>{activeFilter==="All"?"No punch items for this job yet.":`No items assigned to ${activeFilter} on this job.`}</div>}
           {Object.entries(byArea).map(([area,list])=>(
             <div key={area} style={{marginBottom:20}}>
               <div style={{...CAPT,fontSize:12,fontWeight:700,color:C.taupe,marginBottom:8,paddingBottom:4,borderBottom:`1px solid ${C.line}`}}>{area}</div>
@@ -343,12 +401,8 @@ function PubTaskDetail({task,loadPhoto,onLightbox,onClose,onUpdate,trades=[]}){
     if(!tradeName.trim()||!text?.trim())return;
     setPosting(true);
     const newComment={id:uid(),author:tradeName.trim(),role:"trade",text:text.trim(),ts:Date.now()};
-    const mentions=parseMentions(text);
-    const existingMentions=task.mentions||[];
-    const newMentions=[...new Set([...existingMentions,...mentions])];
     await onUpdate(task.id,{
       comments:[...(task.comments||[]),newComment],
-      mentions:newMentions,
     });
     setPosting(false);
   };
@@ -1480,11 +1534,8 @@ function TaskDetail({taskId,tasks:allTasks,userName,loadPhoto,savePhoto,requestA
             accent={accent}
             mentionables={mentionables}
             onAdd={text=>{
-              const mentions=parseMentions(text);
-              const newMentions=[...new Set([...(task.mentions||[]),...mentions])];
               onUpdate({
                 comments:[...(task.comments||[]),{id:uid(),author:userName,role:"internal",text:text.trim(),ts:Date.now()}],
-                mentions:newMentions,
               });
             }}
           />
