@@ -259,7 +259,7 @@ ${body}
         {/* Full-screen trade picker — shown on first visit */}
         {showTradePicker&&trades.length>0&&(
           <div style={{position:"fixed",inset:0,zIndex:100,background:"rgba(28,26,24,0.7)",display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
-            <div style={{background:C.paper,borderRadius:18,width:"100%",maxWidth:420,boxShadow:"0 20px 60px rgba(0,0,0,0.3)",overflow:"hidden"}}>
+            <div style={{background:C.paper,borderRadius:18,width:"100%",maxWidth:400,boxShadow:"0 20px 60px rgba(0,0,0,0.3)",overflow:"hidden"}}>
               <div style={{padding:"28px 24px 20px",borderBottom:`1px solid ${C.line}`,textAlign:"center"}}>
                 {coSettings.logoUrl
                   ? <img src={coSettings.logoUrl} alt="" style={{height:44,maxWidth:180,objectFit:"contain",display:"block",margin:"0 auto 14px"}}/>
@@ -269,20 +269,16 @@ ${body}
                 <div style={{fontSize:13,color:C.taupe}}>{[project.client,project.address].filter(Boolean).join(" · ")}</div>
               </div>
               <div style={{padding:"22px 24px"}}>
-                <div style={{...CAPT,fontSize:11,fontWeight:700,color:C.taupe,marginBottom:14,textAlign:"center"}}>Select your trade to see your items</div>
-                <div style={{display:"grid",gap:9}}>
-                  {trades.map(t=>(
-                    <button key={t} onClick={()=>selectTrade(t)}
-                      style={{width:"100%",padding:"14px 18px",borderRadius:10,border:`1.5px solid ${C.line}`,background:"#fff",color:C.ink,fontSize:15,fontWeight:600,cursor:"pointer",textAlign:"left",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                      {t}
-                      <span style={{color:coSettings.accentColor||C.gold,fontSize:18}}>→</span>
-                    </button>
-                  ))}
-                </div>
-                <button onClick={()=>selectTrade("All")}
-                  style={{width:"100%",marginTop:12,padding:"11px 18px",borderRadius:10,border:"none",background:"transparent",color:C.taupe,fontSize:13,cursor:"pointer",fontWeight:500}}>
-                  Show all trades
-                </button>
+                <div style={{...CAPT,fontSize:11,fontWeight:700,color:C.taupe,marginBottom:12,textAlign:"center"}}>Select your trade to see your items</div>
+                <select
+                  defaultValue=""
+                  onChange={e=>{ if(e.target.value) selectTrade(e.target.value); }}
+                  style={{width:"100%",padding:"14px 16px",fontSize:16,borderRadius:10,border:`2px solid ${coSettings.accentColor||C.gold}`,background:"#fff",color:C.ink,fontWeight:600,appearance:"auto",cursor:"pointer"}}>
+                  <option value="" disabled>— Select your trade —</option>
+                  {trades.map(t=><option key={t} value={t}>{t}</option>)}
+                  <option value="All">All trades</option>
+                </select>
+                <p style={{fontSize:12,color:C.stone,textAlign:"center",marginTop:12,marginBottom:0}}>Choose your company to filter to your open items.</p>
               </div>
             </div>
           </div>
@@ -303,24 +299,25 @@ ${body}
             <PubStat label="Total"        value={filteredTasks.length} color={C.taupe}/>
           </div>
           {trades.length>0&&(
-            <div style={{marginTop:12,display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
-              <div style={{display:"flex",gap:6,flexWrap:"wrap",flex:1}}>
+            <div style={{marginTop:12,display:"flex",alignItems:"center",gap:10}}>
+              <select
+                value={activeFilter}
+                onChange={e=>selectTrade(e.target.value)}
+                style={{flex:1,maxWidth:320,padding:"10px 14px",fontSize:15,borderRadius:9,border:`2px solid ${activeFilter!=="All"?(coSettings.accentColor||C.gold):C.line}`,background:"#fff",color:activeFilter!=="All"?C.ink:C.taupe,fontWeight:activeFilter!=="All"?700:400,cursor:"pointer"}}>
+                <option value="All">All trades</option>
+                {trades.map(t=><option key={t} value={t}>{t}</option>)}
+              </select>
+              {activeFilter!=="All"&&(
                 <button onClick={()=>selectTrade("All")}
-                  style={{padding:"7px 14px",borderRadius:20,border:`1.5px solid ${activeFilter==="All"?C.ink:C.line}`,background:activeFilter==="All"?C.ink:"#fff",color:activeFilter==="All"?"#fff":C.ink,fontSize:13,fontWeight:600,cursor:"pointer",whiteSpace:"nowrap"}}>
-                  All trades
+                  style={{background:"none",border:`1px solid ${C.line}`,borderRadius:8,padding:"9px 12px",fontSize:13,color:C.taupe,cursor:"pointer",whiteSpace:"nowrap",fontWeight:500}}>
+                  ✕ Clear
                 </button>
-                {trades.map(t=>(
-                  <button key={t} onClick={()=>selectTrade(t)}
-                    style={{padding:"7px 14px",borderRadius:20,border:`1.5px solid ${activeFilter===t?(coSettings.accentColor||C.gold):C.line}`,background:activeFilter===t?(coSettings.accentColor||C.gold):"#fff",color:activeFilter===t?"#2E2B28":C.ink,fontSize:13,fontWeight:600,cursor:"pointer",whiteSpace:"nowrap"}}>
-                    {t}
-                  </button>
-                ))}
-              </div>
+              )}
             </div>
           )}
           <p style={{fontSize:12.5,color:C.stone,marginTop:10,marginBottom:0}}>
             {activeFilter!=="All"
-              ? <span>Showing your items only — <button onClick={()=>selectTrade("All")} style={{background:"none",border:"none",color:coSettings.accentColor||C.gold,fontWeight:700,cursor:"pointer",fontSize:12.5,padding:0}}>show all</button></span>
+              ? <span>Showing <b style={{color:C.ink}}>{activeFilter}</b> items only</span>
               : "Read-only view. Contact your project manager with questions."
             }
           </p>
@@ -371,7 +368,7 @@ ${body}
             </div>
           ))}
         </div>
-        {openTask&&<PubTaskDetail key={openTask.id} task={openTask} loadPhoto={loadPhoto} onLightbox={setLightbox} onClose={()=>setOpenId(null)} onUpdate={updateTaskPub} trades={trades}/>}
+        {openTask&&<PubTaskDetail key={openTask.id} task={openTask} project={project} loadPhoto={loadPhoto} onLightbox={setLightbox} onClose={()=>setOpenId(null)} onUpdate={updateTaskPub} trades={trades}/>}
         {lightbox&&<Lightbox photoId={lightbox} loadPhoto={loadPhoto} onClose={()=>setLightbox(null)}/>}
         <div style={{padding:"16px 18px",borderTop:`1px solid ${C.line}`,textAlign:"center",fontSize:12,color:C.stone}}>
           <JobLinkFooter/>
@@ -389,7 +386,7 @@ function PubStat({label,value,color}){  return(
   );
 }
 
-function PubTaskDetail({task,loadPhoto,onLightbox,onClose,onUpdate,trades=[]}){
+function PubTaskDetail({task,project,loadPhoto,onLightbox,onClose,onUpdate,trades=[]}){
   const co=useCompany();
   const accent=co.accentColor||C.gold;
   const overdue=task.dueDate&&task.dueDate<today()&&task.approval!=="Approved";
@@ -462,7 +459,21 @@ function PubTaskDetail({task,loadPhoto,onLightbox,onClose,onUpdate,trades=[]}){
             <div><div style={{...CAPT,fontSize:10,color:C.stone,marginBottom:3}}>Assigned trade</div><div style={{fontWeight:700,fontSize:14}}>{task.trade||"—"}</div></div>
             <div><div style={{...CAPT,fontSize:10,color:C.stone,marginBottom:3}}>Location</div><div style={{fontWeight:700,fontSize:14}}>{task.area||"—"}</div></div>
             <div><div style={{...CAPT,fontSize:10,color:C.stone,marginBottom:3}}>Due date</div><div style={{fontWeight:700,fontSize:14,color:overdue?C.rust:C.ink}}>{fmtDate(task.dueDate)}{overdue?" ⚠":""}</div></div>
-            <div><div style={{...CAPT,fontSize:10,color:C.stone,marginBottom:3}}>Reported by</div><div style={{fontWeight:700,fontSize:14}}>{task.createdBy||"—"}</div></div>
+            <div>
+              <div style={{...CAPT,fontSize:10,color:C.stone,marginBottom:3}}>Site contact</div>
+              {project?.siteContact
+                ? <div>
+                    <div style={{fontWeight:700,fontSize:14}}>{project.siteContact}</div>
+                    {project.sitePhone&&(
+                      <a href={`tel:${project.sitePhone.replace(/\D/g,"")}`}
+                        style={{display:"inline-flex",alignItems:"center",gap:6,marginTop:6,padding:"8px 14px",background:C.sage,borderRadius:20,textDecoration:"none",color:"#fff",fontSize:13,fontWeight:700}}>
+                        <span style={{fontSize:16}}>📞</span> Call {project.siteContact.split(" ")[0]}
+                      </a>
+                    )}
+                  </div>
+                : <div style={{fontWeight:700,fontSize:14,color:C.taupe}}>—</div>
+              }
+            </div>
           </div>
 
           {/* Photos */}
