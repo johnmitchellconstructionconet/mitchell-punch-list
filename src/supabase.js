@@ -218,6 +218,7 @@ function dbToTask(r) {
     approvedAt:       r.approved_at       || null,
     rejectionReason:  r.rejection_reason  || null,
     rejectionPhotos:  r.rejection_photos  || [],
+    myTasks:          r.my_tasks           || [],
     // mentions derived from comments — no DB column required
     mentions:         extractMentions(comments),
   };
@@ -246,6 +247,7 @@ function taskToDb(t) {
     approved_at:       t.approvedAt       || null,
     rejection_reason:  t.rejectionReason  || null,
     rejection_photos:  t.rejectionPhotos  || [],
+    my_tasks:          t.myTasks           || [],
   };
 }
 
