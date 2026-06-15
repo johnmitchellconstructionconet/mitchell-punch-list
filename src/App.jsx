@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import {
   getProjects, upsertProject, deleteProject,
-  getTasks, upsertTask, updateTask, deleteTask,
+  getTasks, upsertTask, deleteTask,
   getCompanies, upsertCompany, deleteCompany,
   getPhoto, savePhoto as dbSavePhoto,
   getSetting, setSetting,
@@ -693,15 +693,9 @@ function InternalApp() {
         trades={trades} projects={projects} companies={companies}
         requestAnnotate={(d,cb)=>setAnnotate({dataUrl:d,onSave:cb})}
         onLightbox={setLightbox} onClose={()=>setOpenTaskId(null)}
-        onUpdate={async patchOrTask=>{
-          const patch=patchOrTask.id===openTask.id?patchOrTask:patchOrTask;
+        onUpdate={async patch=>{
           if(patch.status&&patch.status!==openTask.status) markNotif(openTask.trade,openTask.id);
-          // If full task object passed (from RejectionPanel), just update state — DB already saved
-          if(patchOrTask.id===openTask.id&&patchOrTask.approval){
-            setTasks(t=>t.map(x=>x.id===openTask.id?{...x,...patchOrTask}:x));
-          } else {
-            await updateTaskById(openTask.id, patchOrTask);
-          }
+          await updateTaskById(openTask.id, patchOrTask);
         }}
         onDelete={async()=>{await removeTask(openTask.id);setOpenTaskId(null);}}/>}
       {showMentions&&<MentionsModal userName={user} tasks={tasks} onOpenTask={id=>{setOpenTaskId(id);setShowMentions(false);}} onClose={()=>setShowMentions(false)}/>}
@@ -1351,95 +1345,7 @@ function RejectReasonInput({id}){
   );
 }
 
-/* ── RejectionPanel ─────────────────────────────────────────────
-   Fully self-contained. Owns its own state. Never shares state
-   with TaskDetail so parent re-renders cannot affect its inputs.
-   ────────────────────────────────────────────────────────────── */
-function RejectionPanel({task,userName,savePhoto,requestAnnotate,onSaved,onCancel}){
-  const reasonRef=useRef();
-  const fileRef=useRef();
-  const [photos,setPhotos]=useState([]);
-  const [saving,setSaving]=useState(false);
 
-  const addPhoto=async e=>{
-    const file=e.target.files[0]; e.target.value=""; if(!file)return;
-    const c=await compress(file);
-    requestAnnotate(c,ann=>setPhotos(p=>[...p,ann]));
-  };
-
-  const confirm=async()=>{
-    const reason=(reasonRef.current?.value||"").trim();
-    if(!reason){reasonRef.current?.focus();return;}
-    setSaving(true);
-
-    // Save photos first
-    const savedIds=[];
-    for(const dataUrl of photos){
-      const pid=await savePhoto(dataUrl);
-      savedIds.push(pid);
-    }
-
-    // Build the complete updated task object — no closures, read task directly
-    const now=Date.now();
-    const newRejection={id:uid(),reason,photoIds:savedIds,by:userName,ts:now,count:(task.rejectionCount||0)+1};
-    const updatedTask={
-      ...task,
-      approval:"Rejected",
-      status:"Reported",
-      approvedBy:null,
-      approvedAt:null,
-      rejectionReason:reason,
-      rejectionCount:(task.rejectionCount||0)+1,
-      rejectionHistory:[...(task.rejectionHistory||[]),newRejection],
-      afterPhotos:[...(task.afterPhotos||[]),...savedIds],
-      statusHistory:[...(task.statusHistory||[]),{status:"Rejected",by:userName,reason,ts:now}],
-      comments:[...(task.comments||[]),{id:uid(),author:userName,role:"internal",text:"REJECTED: "+reason,ts:now}],
-    };
-
-    // Save directly to Supabase — bypass the React state chain entirely
-    await updateTask(updatedTask);
-
-    onSaved(updatedTask);
-    setSaving(false);
-  };
-
-  return(
-    <div style={{marginTop:14,borderRadius:10,overflow:"hidden",border:`1.5px solid ${C.rust}`}}>
-      <div style={{padding:"10px 14px",background:"#F9E5E3",borderBottom:`1px solid #F5C6C2`}}>
-        <div style={{...CAPT,fontSize:10,fontWeight:700,color:C.rust}}>Rejection details</div>
-      </div>
-      <div style={{padding:"12px 14px",background:"#FDF0EF",borderBottom:`1px solid #F5C6C2`}}>
-        <div style={{...CAPT,fontSize:10,color:C.rust,fontWeight:600,marginBottom:6}}>Reason — what needs to be fixed</div>
-        <textarea ref={reasonRef} rows={4}
-          placeholder="Be specific — e.g. Grout lines uneven in NW corner, lippage exceeds 1/16″. Needs to be re-done."
-          style={{width:"100%",boxSizing:"border-box",border:`1px solid #E8BFBA`,borderRadius:8,padding:"10px 12px",fontSize:14,resize:"vertical",lineHeight:1.5,background:"#fff",fontFamily:"inherit"}}/>
-      </div>
-      <div style={{padding:"12px 14px",background:"#FDF0EF",borderBottom:`1px solid #F5C6C2`}}>
-        <div style={{...CAPT,fontSize:10,color:C.rust,fontWeight:600,marginBottom:8}}>Reference photos (optional) — annotate to mark the problem</div>
-        <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
-          {photos.map((src,i)=>(
-            <div key={i} style={{position:"relative",flexShrink:0}}>
-              <img src={src} alt="" style={{width:88,height:88,objectFit:"cover",borderRadius:8,border:`2px solid #F5C6C2`,display:"block"}}/>
-              <button onClick={()=>setPhotos(p=>p.filter((_,j)=>j!==i))}
-                style={{position:"absolute",top:-6,right:-6,width:20,height:20,borderRadius:"50%",background:C.rust,color:"#fff",border:"none",fontSize:12,cursor:"pointer",lineHeight:"20px",textAlign:"center",padding:0}}>×</button>
-            </div>
-          ))}
-          <button onClick={()=>fileRef.current.click()}
-            style={{width:88,height:88,borderRadius:8,border:`2px dashed #E8BFBA`,background:"#fff",color:C.rust,fontSize:12,cursor:"pointer",fontWeight:600,lineHeight:1.4}}>
-            📷<br/>Add photo
-          </button>
-          <input ref={fileRef} type="file" accept="image/*" capture="environment" onChange={addPhoto} style={{display:"none"}}/>
-        </div>
-      </div>
-      <div style={{padding:"10px 14px",display:"flex",gap:8,justifyContent:"flex-end",background:"#F9E5E3"}}>
-        <Btn kind="ghost" onClick={onCancel}>Cancel</Btn>
-        <Btn kind="red" onClick={confirm} disabled={saving} style={{opacity:saving?0.6:1}}>
-          {saving?"Saving…":"✗ Confirm rejection"}
-        </Btn>
-      </div>
-    </div>
-  );
-}
 
 function TaskSection({title,children,noBorder,sectionAccent}){
   return(
@@ -1456,13 +1362,8 @@ function TaskDetail({task,userName,loadPhoto,savePhoto,requestAnnotate,onLightbo
   const [editing,setEditing]=useState(false);
   const [editF,setEditF]=useState({area:task.area,description:task.description,trade:task.trade,priority:task.priority,dueDate:task.dueDate||""});
   const startEdit=()=>{setEditF({area:task.area,description:task.description,trade:task.trade,priority:task.priority,dueDate:task.dueDate||""});setEditing(true);};
-  const [showReject,setShowReject]=useState(false);
   const fileRef=useRef();
-  const afterFileRef=useRef();
   const overdue=task.dueDate&&task.dueDate<today()&&task.status!=="Done";
-  const isRejected=task.approval==="Rejected";
-  const hasAfterPhotos=(task.afterPhotos||[]).length>0;
-  const rejectionCount=task.rejectionCount||0;
   const mentionables=[
     ...([userName].filter(Boolean)),
     ...(companies||[]).map(c=>c.name),
@@ -1471,24 +1372,10 @@ function TaskDetail({task,userName,loadPhoto,savePhoto,requestAnnotate,onLightbo
   const tradeInfo=companies?.find(c=>c.name===task.trade);
 
   const addPhoto=async e=>{const file=e.target.files[0];e.target.value="";if(!file)return;const c=await compress(file);requestAnnotate(c,async ann=>{const pid=await savePhoto(ann);onUpdate({photos:[...(task.photos||[]),pid]});});};
-  const addAfterPhoto=async e=>{const file=e.target.files[0];e.target.value="";if(!file)return;const c=await compress(file);requestAnnotate(c,async ann=>{const pid=await savePhoto(ann);onUpdate({afterPhotos:[...(task.afterPhotos||[]),pid],comments:[...(task.comments||[]),{id:uid(),author:userName,role:"internal",text:"After / correction photo added.",ts:Date.now()}]});});};
   const saveEdit=()=>{onUpdate({area:editF.area.trim(),description:editF.description.trim(),trade:editF.trade.trim(),priority:editF.priority,dueDate:editF.dueDate});setEditing(false);};
 
 
 
-  const handleReApproval=()=>{
-    if(!(task.afterPhotos||[]).length){if(!window.confirm("No after photo added yet. Submit for re-approval anyway?"))return;}
-    onUpdate({
-      approval:"Pending",status:"Done",
-      // Explicitly preserve all rejection history so it's never lost
-      rejectionHistory:task.rejectionHistory||[],
-      rejectionReason:task.rejectionReason||null,
-      rejectionCount:task.rejectionCount||0,
-      afterPhotos:task.afterPhotos||[],
-      statusHistory:[...(task.statusHistory||[]),{status:"Re-submitted",by:userName,ts:Date.now()}],
-      comments:[...(task.comments||[]),{id:uid(),author:userName,role:"internal",text:"Re-submitted for approval after corrections.",ts:Date.now()}],
-    });
-  };
 
   const timeline=[
     {ts:task.createdAt,label:"Task reported",by:task.createdBy||"Team",color:C.taupe},
@@ -1507,7 +1394,7 @@ function TaskDetail({task,userName,loadPhoto,savePhoto,requestAnnotate,onLightbo
       <div style={{padding:0,overflow:"hidden",borderRadius:14}}>
 
         {/* Header */}
-        <div style={{padding:"16px 18px",background:isRejected?"#FDF0EF":STATUS_META[task.status]?.bg||C.mist,borderBottom:`1px solid ${C.line}`}}>
+        <div style={{padding:"16px 18px",background:STATUS_META[task.status]?.bg||C.mist,borderBottom:`1px solid ${C.line}`}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:10}}>
             <div style={{flex:1,minWidth:0}}>
               <div style={{fontSize:12,fontWeight:600,color:C.taupe,marginBottom:4}}>
@@ -1520,7 +1407,6 @@ function TaskDetail({task,userName,loadPhoto,savePhoto,requestAnnotate,onLightbo
                 <ApprovalChip approval={task.approval} big/>
                 <span style={{...CAPT,fontSize:11,fontWeight:700,color:PRI_FG[task.priority],background:"rgba(255,255,255,0.7)",padding:"3px 9px",borderRadius:6}}>{task.priority}</span>
                 {overdue&&<span style={{...CAPT,fontSize:11,fontWeight:700,color:C.rust,background:"#F9EDEC",padding:"3px 9px",borderRadius:6}}>⚠ OVERDUE</span>}
-                {rejectionCount>0&&<span style={{...CAPT,fontSize:11,fontWeight:700,color:C.rust,background:"#F9EDEC",padding:"3px 9px",borderRadius:6}}>Rejected {rejectionCount}×</span>}
               </div>
             </div>
             <div style={{display:"flex",gap:7,flexShrink:0}}>
@@ -1554,16 +1440,6 @@ function TaskDetail({task,userName,loadPhoto,savePhoto,requestAnnotate,onLightbo
         )}
 
         {/* Rejection banner */}
-        {isRejected&&task.rejectionReason&&(
-          <div style={{padding:"11px 18px",background:"#FDF0EF",borderBottom:`1px solid #F5C6C2`,display:"flex",gap:10,alignItems:"flex-start"}}>
-            <span style={{fontSize:18,flexShrink:0}}>✗</span>
-            <div>
-              <div style={{...CAPT,fontSize:10,fontWeight:700,color:C.rust,marginBottom:3}}>Rejection reason</div>
-              <div style={{fontSize:14,color:C.rust,fontWeight:600,lineHeight:1.4}}>{task.rejectionReason}</div>
-            </div>
-          </div>
-        )}
-
         {/* Task Details */}
         <TaskSection title="Task Details">
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"10px 16px"}}>
@@ -1597,31 +1473,16 @@ function TaskDetail({task,userName,loadPhoto,savePhoto,requestAnnotate,onLightbo
           </div>
           <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
             <span style={{...CAPT,fontSize:10,color:C.taupe,fontWeight:600}}>Approval:</span>
-            <Btn kind="green" style={{padding:"7px 13px",fontSize:13}} onClick={()=>onUpdate({approval:"Approved",status:"Done",approvedBy:userName,approvedAt:Date.now(),rejectionHistory:task.rejectionHistory||[],rejectionReason:task.rejectionReason||null,rejectionCount:task.rejectionCount||0,afterPhotos:task.afterPhotos||[],statusHistory:[...(task.statusHistory||[]),{status:"Approved",by:userName,ts:Date.now()}]})}>✓ Approve</Btn>
-            <Btn kind="red" style={{padding:"7px 13px",fontSize:13}} onClick={()=>setShowReject(v=>!v)}>✗ Reject</Btn>
+            <Btn kind="green" style={{padding:"7px 13px",fontSize:13}} onClick={()=>onUpdate({approval:"Approved",status:"Done",approvedBy:userName,approvedAt:Date.now(),statusHistory:[...(task.statusHistory||[]),{status:"Approved",by:userName,ts:Date.now()}]})}>✓ Approve</Btn>
+            <Btn kind="red" style={{padding:"7px 13px",fontSize:13}} onClick={()=>{if(!window.confirm("Mark as rejected?"))return;onUpdate({approval:"Rejected",status:"Reported",approvedBy:null,approvedAt:null,rejectionCount:(task.rejectionCount||0)+1,statusHistory:[...(task.statusHistory||[]),{status:"Rejected",by:userName,ts:Date.now()}]});}}>✗ Reject</Btn>
             {task.approval==="Approved"&&<Btn kind="ghost" style={{padding:"7px 13px",fontSize:13}} onClick={()=>onUpdate({approval:"Pending",status:"Reported",approvedBy:null,approvedAt:null})}>Clear</Btn>}
-            {isRejected&&<Btn kind="dark" style={{padding:"7px 13px",fontSize:13,background:C.sage}} onClick={handleReApproval}>↺ Re-submit for approval</Btn>}
             <div style={{flex:1}}/>
             <Btn kind="ghost" style={{color:C.rust,fontSize:13,padding:"7px 13px"}} onClick={()=>window.confirm("Delete this task?")&&onDelete()}>Delete</Btn>
           </div>
-          {showReject&&(
-            <RejectionPanel
-              task={task}
-              userName={userName}
-              savePhoto={savePhoto}
-              requestAnnotate={requestAnnotate}
-              onCancel={()=>setShowReject(false)}
-              onSaved={updatedTask=>{
-                // Sync React state with what was saved to DB
-                onUpdate(updatedTask);
-                setShowReject(false);
-              }}
-            />
-          )}
         </TaskSection>
 
         {/* Before / Original Photos */}
-        <TaskSection title={`Before / Original Photos (${(task.photos||[]).length})`}>
+        <TaskSection title={`Photos (${(task.photos||[]).length})`}>
           <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
             {(task.photos||[]).map(pid=><PhotoThumb key={pid} pid={pid} loadPhoto={loadPhoto} size={100} onClick={()=>onLightbox(pid)}/>)}
             <button onClick={()=>fileRef.current.click()} style={{width:100,height:100,borderRadius:8,border:`2px dashed ${C.line}`,background:"#fff",color:C.taupe,fontSize:13,cursor:"pointer"}}>📷 Add</button>
@@ -1630,66 +1491,8 @@ function TaskDetail({task,userName,loadPhoto,savePhoto,requestAnnotate,onLightbo
           {(task.photos||[]).length>0&&<div style={{fontSize:12,color:C.stone,marginTop:6}}>Tap any photo to enlarge.</div>}
         </TaskSection>
 
-        {/* Rejection History — always shown once any rejection has occurred */}
-        {((task.rejectionHistory||[]).length>0||(task.afterPhotos||[]).length>0||task.rejectionReason||task.rejectionCount>0)&&(
-          <TaskSection title={`Rejection History (${(task.rejectionHistory||[]).length||1}×)`} sectionAccent={C.rust}>
-            {/* Show each rejection event */}
-            {(task.rejectionHistory||[]).length>0?(
-              <div style={{display:"grid",gap:12}}>
-                {(task.rejectionHistory||[]).map((rej,i)=>(
-                  <div key={rej.id||i} style={{borderLeft:`3px solid ${C.rust}`,paddingLeft:12}}>
-                    <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
-                      <span style={{...CAPT,fontSize:10,fontWeight:700,color:C.rust}}>Rejection #{rej.count||i+1}</span>
-                      <span style={{fontSize:11.5,color:C.stone}}>{fmtDT(rej.ts)} · {rej.by}</span>
-                    </div>
-                    <div style={{fontSize:13.5,fontWeight:600,color:C.rust,marginBottom:rej.photoIds?.length?8:0}}>{rej.reason}</div>
-                    {(rej.photoIds||[]).length>0&&(
-                      <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
-                        {rej.photoIds.map(pid=><PhotoThumb key={pid} pid={pid} loadPhoto={loadPhoto} size={80} onClick={()=>onLightbox(pid)}/>)}
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            ):(
-              /* Legacy: single rejectionReason field before history was tracked */
-              task.rejectionReason&&(
-                <div style={{borderLeft:`3px solid ${C.rust}`,paddingLeft:12}}>
-                  <div style={{fontSize:13.5,fontWeight:600,color:C.rust}}>{task.rejectionReason}</div>
-                </div>
-              )
-            )}
-
-            {/* After / Correction Photos — always visible, never disappears */}
-            <div style={{marginTop:(task.rejectionHistory||[]).length||task.rejectionReason?14:0}}>
-              <div style={{...CAPT,fontSize:10,fontWeight:700,color:hasAfterPhotos?C.sage:C.taupe,marginBottom:8}}>
-                After / Correction Photos ({(task.afterPhotos||[]).length})
-              </div>
-              {isRejected&&!hasAfterPhotos&&(
-                <div style={{fontSize:13,color:C.rust,marginBottom:10,padding:"8px 12px",background:"#FDF0EF",borderRadius:7,fontWeight:600}}>
-                  Upload photos of the corrected work before re-submitting.
-                </div>
-              )}
-              <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:isRejected?10:0}}>
-                {(task.afterPhotos||[]).map(pid=><PhotoThumb key={pid} pid={pid} loadPhoto={loadPhoto} size={100} onClick={()=>onLightbox(pid)}/>)}
-                <button onClick={()=>afterFileRef.current.click()}
-                  style={{width:100,height:100,borderRadius:8,border:`2px dashed ${hasAfterPhotos?C.sage:C.rust}`,background:"#fff",color:hasAfterPhotos?C.sage:C.rust,fontSize:13,cursor:"pointer",fontWeight:600,lineHeight:1.3}}>
-                  📷<br/>{hasAfterPhotos?"Add more":"Add photo"}
-                </button>
-                <input ref={afterFileRef} type="file" accept="image/*" capture="environment" onChange={addAfterPhoto} style={{display:"none"}}/>
-              </div>
-              {isRejected&&(
-                <Btn kind="dark" onClick={handleReApproval} style={{width:"100%",fontSize:14,padding:"12px",background:C.sage}}>
-                  ↺ Re-submit for approval{!hasAfterPhotos&&" (no after photo yet)"}
-                </Btn>
-              )}
-            </div>
-          </TaskSection>
-        )}
-
-
         {/* Notes & Comments */}
-        <TaskSection title={`Notes & Comments${(task.comments||[]).filter(c=>!c.text.startsWith("After / correction")).length>0?" ("+((task.comments||[]).filter(c=>!c.text.startsWith("After / correction")).length)+")":""}`}>
+        <TaskSection title={`Notes & Comments${(task.comments||[]).filter(c=>!c.text.startsWith("After / correction")).length>0?" ("+(task.comments||[]).filter(c=>!c.text.startsWith("After / correction")).length+")":""}`}>
           <CommentBox
             comments={task.comments||[]}
             userName={userName}
@@ -1724,21 +1527,6 @@ function TaskDetail({task,userName,loadPhoto,savePhoto,requestAnnotate,onLightbo
       </div>
     </Modal>
   );
-}
-
-function NewJobModal({onCancel,onCreate}){
-  const [f,setF]=useState({name:"",client:"",address:"",siteContact:"",sitePhone:""}); const set=k=>e=>setF({...f,[k]:e.target.value}); const ok=f.name.trim();
-  return(<Modal onClose={onCancel}><div style={{padding:18}}>
-    <h2 style={{...DISP,fontSize:26,margin:"0 0 13px"}}>New Job</h2>
-    <Lbl>Job name</Lbl><input value={f.name} onChange={set("name")} placeholder="e.g. Blackburn Residence" style={{marginBottom:11}}/>
-    <Lbl>Client</Lbl><input value={f.client} onChange={set("client")} placeholder="Optional" style={{marginBottom:11}}/>
-    <Lbl>Address</Lbl><input value={f.address} onChange={set("address")} placeholder="Optional" style={{marginBottom:11}}/>
-    <div style={{display:"grid",gap:11,gridTemplateColumns:"1fr 1fr",marginBottom:14}}>
-      <div><Lbl>Site contact</Lbl><input value={f.siteContact} onChange={set("siteContact")} placeholder="Name"/></div>
-      <div><Lbl>Site contact phone</Lbl><input type="tel" value={f.sitePhone} onChange={set("sitePhone")} placeholder="(417) 555-0100"/></div>
-    </div>
-    <div style={{display:"flex",gap:9,justifyContent:"flex-end"}}><Btn kind="ghost" onClick={onCancel}>Cancel</Btn><Btn disabled={!ok} style={{opacity:ok?1:0.4}} onClick={()=>onCreate({id:uid(),name:f.name.trim(),client:f.client.trim(),address:f.address.trim(),siteContact:f.siteContact.trim(),sitePhone:f.sitePhone.trim(),status:"Active",createdAt:Date.now()})}>Create</Btn></div>
-  </div></Modal>);
 }
 
 function EditJobModal({project,onCancel,onSave}){
@@ -2510,3 +2298,4 @@ function Report({tasks,jobLabel,filters,userName,loadPhoto,onBack,project}){
     </div>
   </div>);
 }
+                                              
