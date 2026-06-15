@@ -43,10 +43,16 @@ export async function getTasks() {
 
 export async function upsertTask(task) {
   const payload = taskToDb(task);
-  const { error } = await supabase
+  console.log("upsertTask called, id:", payload.id, "approval:", payload.approval, "status:", payload.status);
+  const { data, error } = await supabase
     .from("tasks")
-    .upsert(payload, { onConflict: "id" });
-  if (error) throw new Error(JSON.stringify(error));
+    .upsert(payload, { onConflict: "id" })
+    .select("id");
+  if (error) {
+    console.error("upsertTask FAILED:", JSON.stringify(error));
+    throw new Error(JSON.stringify(error));
+  }
+  console.log("upsertTask SUCCESS, rows affected:", data?.length);
 }
 
 // Direct update — used by RejectionPanel to bypass React state chain
