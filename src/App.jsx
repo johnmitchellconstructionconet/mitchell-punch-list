@@ -597,18 +597,20 @@ function InternalApp() {
   const [photoCache,   setPhotoCache]   = useState({});
   const [pendingNotif, setPendingNotif] = useState({});
   const [showMentions, setShowMentions] = useState(false);
+  const [teamMembers,  setTeamMembers]  = useState([]); // [{id, name}]
 
   const loadAll = useCallback(async()=>{
     setSyncing(true);
-    const [p, t, c, tc, cs] = await Promise.all([
+    const [p, t, c, tc, cs, tm] = await Promise.all([
       getProjects(), getTasks(), getCompanies(),
-      getSetting("teamcode"), getSetting("cosettings"),
+      getSetting("teamcode"), getSetting("cosettings"), getSetting("teammembers"),
     ]);
     setProjects(p);
     setTasks(t);
     setCompanies(c);
     setTeamCode(tc||"");
     if(cs) { try { setCoSettings(s=>({...s,...JSON.parse(cs)})); } catch {} }
+    if(tm) { try { setTeamMembers(JSON.parse(tm)); } catch {} }
     setSyncing(false); setLoaded(true);
   },[]);
 
@@ -662,6 +664,7 @@ function InternalApp() {
 
   const pTC = async v => { setTeamCode(v); await setSetting("teamcode", v); };
   const pCS = async v => { setCoSettings(v); await setSetting("cosettings", JSON.stringify(v)); };
+  const saveTeamMembers = async v => { setTeamMembers(v); await setSetting("teammembers", JSON.stringify(v)); };
 
   const markNotif = (trade,id) => setPendingNotif(p=>({...p,[trade]:[...new Set([...(p[trade]||[]),id])]}));
 
@@ -741,13 +744,14 @@ function InternalApp() {
             <Dashboard projects={projects} tasks={tasks}
               onOpenJob={n=>{setCurrentJob(n);setFilters({status:"All",trade:"All",priority:"All",dueDate:"All",q:""});setTaskMode("list");}}
               onAllJobs={()=>{setCurrentJob("ALL");setFilters({status:"All",trade:"All",priority:"All",dueDate:"All",q:""});setTaskMode("list");}}
-              onCalendar={()=>{setCurrentJob("ALL");setTaskMode("calendar");}}
               onNewJob={()=>setShowNewJob(true)}
               onDirectory={()=>setShowDir(true)}
               onEmail={()=>setShowEmail(true)}
               onSettings={()=>setShowSettings(true)}
               onStatusChange={async(proj,newStatus)=>await updateProjectState({...proj,status:newStatus})}
-              userName={user} onMentions={()=>setShowMentions(true)}/>
+              userName={user} onMentions={()=>setShowMentions(true)}
+              teamMembers={teamMembers}
+              onOpenMyTask={id=>{setOpenTaskId(id);}}/>
           ):(
             <>
               <JobBar project={currProj} jobLabel={currentJob==="ALL"?"All jobs":currentJob}
@@ -759,9 +763,7 @@ function InternalApp() {
                 taskMode={taskMode} setTaskMode={setTaskMode}
                 onNew={()=>setShowNew(true)} onReport={()=>setView("report")}
                 onBatch={()=>setShowBatch(true)} counts={visible}/>
-              {taskMode==="calendar"
-                ?<CalendarView tasks={visible} onOpen={setOpenTaskId}/>
-                :<TaskList tasks={visible} showProject={currentJob==="ALL"} onOpen={setOpenTaskId} loadPhoto={loadPhoto}/>}
+              <TaskList tasks={visible} showProject={currentJob==="ALL"} onOpen={setOpenTaskId} loadPhoto={loadPhoto}/>
             </>
           )}
         </div>
@@ -775,7 +777,7 @@ function InternalApp() {
         onCancel={()=>setShowNew(false)} onCreate={async t=>{await addTask(t);setShowNew(false);}}/>}
       {openTask&&<TaskDetail key={openTask.id} taskId={openTask.id} tasks={tasks} userName={user}
         loadPhoto={loadPhoto} savePhoto={savePhoto}
-        trades={trades} projects={projects} companies={companies}
+        trades={trades} projects={projects} companies={companies} teamMembers={teamMembers}
         requestAnnotate={(d,cb)=>setAnnotate({dataUrl:d,onSave:cb})}
         onLightbox={setLightbox} onClose={()=>setOpenTaskId(null)}
         onUpdate={async patch=>{
@@ -809,6 +811,7 @@ function InternalApp() {
         onClose={()=>setShowEmailAll(false)}/>}
       {showQR&&<QRModal project={showQR} onClose={()=>setShowQR(null)}/>}
       {showDir&&<DirectoryModal companies={companies} teamCode={teamCode} onSaveTC={pTC}
+        teamMembers={teamMembers} onSaveTeamMembers={saveTeamMembers}
         onUpsert={async co=>{
           const ex=companies.some(c=>c.id===co.id);
           if(ex) await updateCompany(co); else await addCompany(co);
@@ -1218,7 +1221,7 @@ function MentionsModal({userName,tasks,onOpenTask,onClose}){
   );
 }
 
-function Dashboard({projects,tasks,onOpenJob,onAllJobs,onCalendar,onNewJob,onDirectory,onEmail,onSettings,onStatusChange,loadPhoto,userName,onMentions}){
+function Dashboard({projects,tasks,onOpenJob,onAllJobs,onNewJob,onDirectory,onEmail,onSettings,onStatusChange,loadPhoto,userName,onMentions,teamMembers=[],onOpenMyTask}){
   const co=useCompany();
   const [jobFilter,setJobFilter]=useState("Active");
   const stats=n=>{const l=tasks.filter(t=>t.project===n);return{total:l.length,open:l.filter(t=>t.status!=="Done").length,rej:l.filter(t=>t.approval==="Rejected").length,done:l.filter(t=>t.status==="Done").length,approved:l.filter(t=>t.approval==="Approved").length,overdue:l.filter(t=>t.status!=="Done"&&t.dueDate&&t.dueDate<today()).length};};
@@ -1233,7 +1236,6 @@ function Dashboard({projects,tasks,onOpenJob,onAllJobs,onCalendar,onNewJob,onDir
       <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:12,flexWrap:"wrap"}}>
         <h2 style={{...DISP,fontSize:30,fontWeight:600,margin:0,flex:1}}>Jobs</h2>
         <Btn kind="ghost" onClick={onAllJobs} style={{fontSize:13}}>All tasks</Btn>
-        <Btn kind="ghost" onClick={onCalendar} style={{fontSize:13}}>📅 Calendar</Btn>
         <Btn kind="ghost" onClick={onEmail} style={{fontSize:13}}>✉ Email trades</Btn>
         <Btn kind="ghost" onClick={onDirectory} style={{fontSize:13}}>Trade directory</Btn>
         <Btn kind="ghost" onClick={onSettings} style={{fontSize:13}}>⚙ Settings</Btn>
@@ -1257,6 +1259,43 @@ function Dashboard({projects,tasks,onOpenJob,onAllJobs,onCalendar,onNewJob,onDir
         <StatCard label="Needs corrections" value={tot.rej} color={tot.rej?C.rust:C.taupe}/>
         <StatCard label="Overdue" value={tot.over} color={tot.over?C.rust:C.taupe}/>
       </div>
+
+      {/* My Tasks strip */}
+      {userName&&(()=>{
+        const myTasks=tasks.filter(t=>(t.myTasks||[]).includes(userName)&&t.approval!=="Approved");
+        if(!myTasks.length) return null;
+        const overdueMy=myTasks.filter(t=>t.dueDate&&t.dueDate<today()).length;
+        return(
+          <div style={{marginBottom:14,background:C.card,border:`1.5px solid ${C.gold}`,borderRadius:12,overflow:"hidden"}}>
+            <div style={{padding:"10px 16px",borderBottom:`1px solid ${C.line}`,background:"#FFFBF0",display:"flex",alignItems:"center",gap:10}}>
+              <span style={{fontSize:16}}>📋</span>
+              <div style={{flex:1}}>
+                <div style={{fontWeight:700,fontSize:13,color:C.ink}}>My Tasks <span style={{fontWeight:400,color:C.taupe}}>— {myTasks.length} item{myTasks.length!==1?"s":""} assigned to you</span></div>
+                {overdueMy>0&&<div style={{fontSize:12,color:C.rust,fontWeight:600}}>{overdueMy} overdue</div>}
+              </div>
+            </div>
+            <div style={{padding:"10px 14px",display:"grid",gap:7}}>
+              {myTasks.slice(0,5).map(t=>{
+                const overdue=t.dueDate&&t.dueDate<today();
+                return(
+                  <div key={t.id} onClick={()=>onOpenMyTask(t.id)}
+                    style={{display:"flex",alignItems:"center",gap:12,padding:"9px 12px",borderRadius:8,border:`1px solid ${overdue?"#F5C6C2":C.line}`,background:overdue?"#FEF6F5":"#fff",cursor:"pointer"}}>
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{fontWeight:600,fontSize:13,color:C.ink,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{t.description}</div>
+                      <div style={{fontSize:12,color:C.taupe,marginTop:2}}>{t.project} · {t.area}</div>
+                    </div>
+                    <div style={{textAlign:"right",flexShrink:0}}>
+                      <div style={{fontSize:12,color:overdue?C.rust:C.taupe,fontWeight:overdue?700:400}}>{fmtDate(t.dueDate)}{overdue?" ⚠":""}</div>
+                      <div style={{marginTop:3}}><StatusChip status={t.status}/></div>
+                    </div>
+                  </div>
+                );
+              })}
+              {myTasks.length>5&&<div style={{fontSize:12,color:C.taupe,textAlign:"center",paddingTop:4}}>+{myTasks.length-5} more — view inside the job</div>}
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Filter tabs */}
       <div style={{display:"flex",gap:0,border:`1px solid ${C.line}`,borderRadius:8,overflow:"hidden",width:"fit-content",marginBottom:14}}>
@@ -1331,11 +1370,7 @@ function InternalToolbar({filters,setFilters,trades,taskMode,setTaskMode,onNew,o
   return(
     <div style={{padding:"11px 16px",borderBottom:`1px solid ${C.line}`,background:C.card}}>
       <div style={{display:"flex",flexWrap:"wrap",gap:8,alignItems:"center"}}>
-        <div style={{display:"flex",border:`1px solid ${C.line}`,borderRadius:8,overflow:"hidden"}}>
-          {[["list","List"],["calendar","📅"]].map(([v,l])=>(
-            <button key={v} onClick={()=>setTaskMode(v)} style={{background:taskMode===v?C.ink:"#fff",color:taskMode===v?"#fff":C.ink,padding:"10px 13px",borderRadius:0,fontSize:14,border:"none"}}>{l}</button>
-          ))}
-        </div>
+
         <select style={{width:"auto",color:filters.status!=="All"?C.ink:undefined,fontWeight:filters.status!=="All"?700:400}} value={filters.status} onChange={e=>setFilters({...filters,status:e.target.value})}>
           <option value="All">Status: All</option>{STATUSES.map(s=><option key={s} value={s}>{s}</option>)}
         </select>
@@ -1609,7 +1644,7 @@ function TaskSection({title,children,noBorder,sectionAccent}){
   );
 }
 
-function TaskDetail({taskId,tasks:allTasks,userName,loadPhoto,savePhoto,requestAnnotate,onLightbox,onClose,onUpdate,onDelete,trades,projects,companies}){
+function TaskDetail({taskId,tasks:allTasks,userName,loadPhoto,savePhoto,requestAnnotate,onLightbox,onClose,onUpdate,onDelete,trades,projects,companies,teamMembers=[]}){
   // Always read the live version from tasks array so status/approval reflect saves immediately
   const task = allTasks.find(t=>t.id===taskId) || allTasks[0];
   const co=useCompany();
@@ -1671,6 +1706,7 @@ function TaskDetail({taskId,tasks:allTasks,userName,loadPhoto,savePhoto,requestA
   };
   const mentionables=[
     ...([userName].filter(Boolean)),
+    ...(teamMembers||[]).map(m=>m.name).filter(n=>n!==userName),
     ...(companies||[]).map(c=>c.name),
     ...(trades||[]),
   ].filter((v,i,a)=>a.indexOf(v)===i);
@@ -1933,6 +1969,30 @@ function TaskDetail({taskId,tasks:allTasks,userName,loadPhoto,savePhoto,requestA
             <input ref={fileRef} type="file" accept="image/*" capture="environment" onChange={addPhoto} style={{display:"none"}}/>
           </div>
           {(task.photos||[]).length>0&&<div style={{fontSize:12,color:C.stone,marginTop:6}}>Tap any photo to enlarge.</div>}
+        </TaskSection>
+
+        {/* My Tasks — assign internal team members */}
+        <TaskSection title="Assigned to Team Members">
+          <div style={{marginBottom:10}}>
+            <div style={{fontSize:13,color:C.taupe,marginBottom:10}}>Tag team members who have action items on this task. Shows on their dashboard under My Tasks.</div>
+            {(teamMembers||[]).length===0?(
+              <div style={{fontSize:13,color:C.stone}}>No team members configured. Add team members in the Trade Directory.</div>
+            ):(
+              <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+                {(teamMembers||[]).map(m=>{
+                  const assigned=(task.myTasks||[]).includes(m.name);
+                  return(
+                    <button key={m.id} onClick={()=>{
+                      const cur=task.myTasks||[];
+                      onUpdate({myTasks: assigned ? cur.filter(n=>n!==m.name) : [...cur,m.name]});
+                    }} style={{padding:"7px 13px",borderRadius:20,border:`1.5px solid ${assigned?accent:C.line}`,background:assigned?accent+"22":"#fff",color:assigned?C.ink:C.taupe,fontSize:13,fontWeight:assigned?700:400,cursor:"pointer",transition:"all 0.1s"}}>
+                      {assigned?"✓ ":""}{m.name}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
         </TaskSection>
 
         {/* Notes & Comments */}
@@ -2553,7 +2613,46 @@ function EmailAllModal({job,tasks,emailMap,loadPhoto,onClose}){
   </div></Modal>);
 }
 
-function DirectoryModal({companies,teamCode,onSaveTC,onUpsert,onDelete,onImport,onWipe,onClose}){
+function TeamMembersEditor({members=[], onSave}){
+  const [list,setList]=useState(members);
+  const [newName,setNewName]=useState("");
+  const [dirty,setDirty]=useState(false);
+
+  const add=()=>{
+    const name=newName.trim(); if(!name||list.some(m=>m.name.toLowerCase()===name.toLowerCase()))return;
+    const next=[...list,{id:uid(),name}];
+    setList(next); setNewName(""); setDirty(true);
+  };
+  const remove=id=>{setList(l=>l.filter(m=>m.id!==id));setDirty(true);};
+  const save=()=>{onSave(list);setDirty(false);};
+
+  return(
+    <div>
+      <div style={{display:"flex",gap:8,marginBottom:10}}>
+        <input value={newName} onChange={e=>setNewName(e.target.value)}
+          placeholder="Team member name (e.g. John Mitchell)"
+          onKeyDown={e=>e.key==="Enter"&&add()}
+          style={{flex:1}}/>
+        <Btn kind="ghost" onClick={add} style={{whiteSpace:"nowrap",padding:"9px 14px",fontSize:13}}>+ Add</Btn>
+      </div>
+      {list.length===0?(
+        <div style={{fontSize:13,color:C.stone,padding:"10px 0"}}>No team members yet. Add names above — they'll appear in @mention dropdowns and My Tasks.</div>
+      ):(
+        <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:10}}>
+          {list.map(m=>(
+            <div key={m.id} style={{display:"inline-flex",alignItems:"center",gap:5,background:C.card,border:`1px solid ${C.line}`,borderRadius:20,padding:"5px 12px",fontSize:13,fontWeight:600}}>
+              {m.name}
+              <button onClick={()=>remove(m.id)} style={{background:"none",border:"none",cursor:"pointer",color:C.taupe,fontSize:14,lineHeight:1,padding:0,marginLeft:2}}>×</button>
+            </div>
+          ))}
+        </div>
+      )}
+      {dirty&&<Btn kind="dark" onClick={save} style={{fontSize:13,padding:"8px 16px"}}>Save team members</Btn>}
+    </div>
+  );
+}
+
+function DirectoryModal({companies,teamCode,onSaveTC,onUpsert,onDelete,onImport,onWipe,onClose,teamMembers=[],onSaveTeamMembers}){
   const [editing,setEditing]=useState(null); const [tc,setTc]=useState(teamCode||""); const [flash,setFlash]=useState(false);
   const sorted=[...companies].sort((a,b)=>a.name.localeCompare(b.name));
   return(<Modal onClose={onClose} xwide><div style={{padding:18}}>
@@ -2576,7 +2675,16 @@ function DirectoryModal({companies,teamCode,onSaveTC,onUpsert,onDelete,onImport,
       </div>))}
     </div>
     {editing&&<CompanyForm company={editing==="new"?null:editing} existingNames={companies.filter(c=>editing==="new"||c.id!==editing.id).map(c=>c.name.trim().toLowerCase())} onCancel={()=>setEditing(null)} onSave={async co=>{await onUpsert(co);setEditing(null);}}/>}
-    <div style={{marginTop:20,padding:13,border:`1px solid ${C.rust}`,borderRadius:12,background:"#FBF3F1"}}>
+    {/* ── Team Members ── */}
+    <div style={{marginTop:20,padding:14,background:C.mist,borderRadius:12,marginBottom:16}}>
+      <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:12}}>
+        <div style={{...CAPT,fontSize:11,fontWeight:700,color:C.taupe,flex:1}}>Team Members</div>
+        <span style={{fontSize:12,color:C.stone}}>Used for @mentions and My Tasks assignment</span>
+      </div>
+      <TeamMembersEditor members={teamMembers} onSave={onSaveTeamMembers}/>
+    </div>
+
+    <div style={{marginTop:4,padding:13,border:`1px solid ${C.rust}`,borderRadius:12,background:"#FBF3F1"}}>
       <div style={{...CAPT,fontSize:11,fontWeight:700,color:C.rust,marginBottom:5}}>Danger zone</div>
       <div style={{fontSize:13.5,color:C.taupe,marginBottom:10}}>Permanently erases every job, task, photo, and contact. Cannot be undone.</div>
       <Btn kind="red" onClick={async()=>{if(!window.confirm("Erase ALL data for everyone?"))return;if(!window.confirm("Final confirmation."))return;await onWipe();}}>Erase all data</Btn>
