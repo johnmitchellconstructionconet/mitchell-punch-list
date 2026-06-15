@@ -1211,7 +1211,7 @@ function TaskCard({task,showProject,onOpen,loadPhoto}){
       </div>
 
       {/* Section 4 — Photos + comments */}
-      {((task.photos||[]).length>0||(task.comments||[]).length>0)&&(
+      {((task.photos||[]).length>0||(task.comments||[]).filter(c=>!c.text.startsWith("REJECTED:")&&!c.text.startsWith("After / correction")).length>0)&&(
         <div style={{padding:"8px 13px",display:"flex",alignItems:"center",gap:8,background:"#FAFAF8"}}>
           {(task.photos||[]).length>0&&(
             <div style={{display:"flex",gap:4,flex:1}}>
@@ -1219,9 +1219,7 @@ function TaskCard({task,showProject,onOpen,loadPhoto}){
               {(task.photos||[]).length>4&&<div style={{width:48,height:48,borderRadius:7,background:C.mist,display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,color:C.taupe,fontWeight:600}}>+{task.photos.length-4}</div>}
             </div>
           )}
-          {(task.comments||[]).length>0&&(
-            <div style={{fontSize:12,color:C.taupe,whiteSpace:"nowrap",marginLeft:"auto"}}>💬 {task.comments.length} note{task.comments.length!==1?"s":""}</div>
-          )}
+          {(()=>{const n=(task.comments||[]).filter(c=>!c.text.startsWith("REJECTED:")&&!c.text.startsWith("After / correction")).length;return n>0&&<div style={{fontSize:12,color:C.taupe,whiteSpace:"nowrap",marginLeft:"auto"}}>💬 {n} comment{n!==1?"s":""}</div>;})()}
         </div>
       )}
     </div>
@@ -1238,24 +1236,64 @@ function PhotoThumb({pid,loadPhoto,size=70,onClick}){
   );
 }
 
-/* Stable comment input — owns its own textarea state, never re-mounts */
-function CommentBox({comments,userName,accent,onAdd}){
+/* Stable comment input with @ mentions — owns all its own state, never re-mounts */
+function CommentBox({comments,userName,accent,onAdd,mentionables=[]}){
   const taRef=useRef();
+  const [drop,setDrop]=useState([]);
+  const [atPos,setAtPos]=useState(-1);
+  const [showDrop,setShowDrop]=useState(false);
+
+  const handleKey=e=>{
+    if(e.key==="Enter"&&!e.shiftKey&&!showDrop){e.preventDefault();submit();}
+    if(e.key==="Escape") setShowDrop(false);
+  };
+
+  const handleInput=()=>{
+    const ta=taRef.current; if(!ta) return;
+    const v=ta.value; const cur=ta.selectionStart;
+    const before=v.slice(0,cur);
+    const atIdx=before.lastIndexOf("@");
+    if(atIdx>=0&&(atIdx===0||/\s/.test(before[atIdx-1]))){
+      const q=before.slice(atIdx+1).toLowerCase();
+      const matches=mentionables.filter(m=>m.toLowerCase().includes(q)).slice(0,8);
+      if(matches.length){setDrop(matches);setAtPos(atIdx);setShowDrop(true);return;}
+    }
+    setShowDrop(false);
+  };
+
+  const insertMention=name=>{
+    const ta=taRef.current; if(!ta) return;
+    const cur=ta.selectionStart; const v=ta.value;
+    const before=v.slice(0,atPos);
+    const after=v.slice(cur);
+    ta.value=before+"@"+name+" "+after;
+    const pos=before.length+name.length+2;
+    ta.setSelectionRange(pos,pos);
+    ta.focus();
+    setShowDrop(false);
+  };
+
   const submit=()=>{
     const ta=taRef.current;
     if(!ta||!ta.value.trim())return;
     onAdd(ta.value);
     ta.value="";
+    setShowDrop(false);
   };
+
+  const visibleComments=(comments||[]).filter(c=>!c.text.startsWith("After / correction"));
+
   return(
     <div>
       <div style={{display:"grid",gap:7,marginBottom:10}}>
-        {comments.length===0&&<div style={{fontSize:13.5,color:C.taupe}}>No comments yet.</div>}
-        {comments.map(c=>(
+        {visibleComments.length===0&&<div style={{fontSize:13.5,color:C.taupe}}>No comments yet.</div>}
+        {visibleComments.map(c=>(
           <div key={c.id} style={{background:"#fff",border:`1px solid ${C.line}`,borderRadius:8,padding:"9px 12px",
-            borderLeft:`3px solid ${c.text.startsWith("REJECTED:")?C.rust:c.role==="internal"?accent:C.line}`}}>
+            borderLeft:`3px solid ${c.text.startsWith("REJECTED:")?C.rust:c.role==="trade"?C.gold:c.role==="internal"?accent:C.line}`}}>
             <div style={{fontSize:12,color:C.taupe,marginBottom:3}}>
-              <b style={{color:c.text.startsWith("REJECTED:")?C.rust:c.role==="internal"?accent:C.ink}}>{c.author}</b> · {fmtDT(c.ts)}
+              <b style={{color:c.text.startsWith("REJECTED:")?C.rust:c.role==="trade"?C.gold:c.role==="internal"?accent:C.ink}}>{c.author}</b>
+              {c.role==="trade"&&<span style={{...CAPT,fontSize:9,color:C.gold,marginLeft:5}}>trade</span>}
+              {" · "}{fmtDT(c.ts)}
             </div>
             <div style={{fontSize:14,whiteSpace:"pre-wrap",color:c.text.startsWith("REJECTED:")?C.rust:C.ink,fontWeight:c.text.startsWith("REJECTED:")?600:400}}>
               <MentionText text={c.text} highlight={userName}/>
@@ -1263,11 +1301,28 @@ function CommentBox({comments,userName,accent,onAdd}){
           </div>
         ))}
       </div>
-      <div style={{display:"flex",gap:8}}>
-        <textarea ref={taRef} rows={2} placeholder="Add a note…"
-          onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();submit();}}}
-          style={{flex:1,resize:"vertical",boxSizing:"border-box",padding:"9px 12px",fontSize:14,borderRadius:8,border:`1px solid ${C.line}`,lineHeight:1.5}}/>
-        <Btn kind="ghost" style={{alignSelf:"flex-end"}} onClick={submit}>Post</Btn>
+      <div style={{position:"relative"}}>
+        {showDrop&&(
+          <div style={{position:"absolute",bottom:"calc(100% + 4px)",left:0,background:"#fff",border:`1px solid ${C.line}`,borderRadius:9,boxShadow:"0 4px 16px rgba(0,0,0,0.12)",zIndex:99,minWidth:200,overflow:"hidden"}}>
+            {drop.map(name=>(
+              <div key={name}
+                onMouseDown={e=>{e.preventDefault();insertMention(name);}}
+                style={{padding:"9px 14px",fontSize:13.5,cursor:"pointer",borderBottom:`1px solid ${C.line}`}}
+                onMouseEnter={e=>e.currentTarget.style.background=C.mist}
+                onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+                <span style={{color:C.gold,fontWeight:700}}>@</span>{name}
+              </div>
+            ))}
+          </div>
+        )}
+        <div style={{display:"flex",gap:8}}>
+          <textarea ref={taRef} rows={2}
+            placeholder="Add a note… type @ to mention someone"
+            onKeyDown={handleKey}
+            onInput={handleInput}
+            style={{flex:1,resize:"vertical",boxSizing:"border-box",padding:"9px 12px",fontSize:14,borderRadius:8,border:`1px solid ${C.line}`,lineHeight:1.5,fontFamily:"inherit"}}/>
+          <Btn kind="ghost" style={{alignSelf:"flex-end"}} onClick={submit}>Post</Btn>
+        </div>
       </div>
     </div>
   );
@@ -1408,8 +1463,13 @@ function TaskDetail({task,userName,loadPhoto,savePhoto,requestAnnotate,onLightbo
 
   const timeline=[
     {ts:task.createdAt,label:"Task reported",by:task.createdBy||"Team",color:C.taupe},
-    ...(task.statusHistory||[]).map(h=>({ts:h.ts,label:`Status → ${h.status}`,by:h.by,color:h.status==="Rejected"?C.rust:h.status==="Approved"||h.status==="Re-submitted"?C.sage:STATUS_META[h.status]?.fg||C.taupe})),
-    ...(task.comments||[]).map(c=>({ts:c.ts,label:c.text,by:c.author,color:C.stone,isComment:true})),
+    ...(task.statusHistory||[]).map(h=>({
+      ts:h.ts,
+      label:h.status==="Rejected"&&h.reason?`Rejected: ${h.reason}`:`Status → ${h.status}`,
+      by:h.by,
+      color:h.status==="Rejected"?C.rust:h.status==="Approved"||h.status==="Re-submitted"?C.sage:STATUS_META[h.status]?.fg||C.taupe
+    })),
+    ...(task.comments||[]).filter(c=>!c.text.startsWith("REJECTED:")).map(c=>({ts:c.ts,label:c.text,by:c.author,color:C.stone,isComment:true})),
   ].sort((a,b)=>a.ts-b.ts);
 
 
@@ -1521,13 +1581,22 @@ function TaskDetail({task,userName,loadPhoto,savePhoto,requestAnnotate,onLightbo
               requestAnnotate={requestAnnotate}
               onCancel={()=>setShowReject(false)}
               onConfirm={(reason,photoIds)=>{
+                const newRejection={
+                  id:uid(),
+                  reason,
+                  photoIds,
+                  by:userName,
+                  ts:Date.now(),
+                  count:(task.rejectionCount||0)+1,
+                };
                 onUpdate({
                   approval:"Rejected",status:"Reported",
                   approvedBy:null,approvedAt:null,
                   rejectionReason:reason,
                   rejectionCount:(task.rejectionCount||0)+1,
+                  rejectionHistory:[...(task.rejectionHistory||[]),newRejection],
                   afterPhotos:[...(task.afterPhotos||[]),...photoIds],
-                  statusHistory:[...(task.statusHistory||[]),{status:"Rejected",by:userName,ts:Date.now()}],
+                  statusHistory:[...(task.statusHistory||[]),{status:"Rejected",by:userName,reason,ts:Date.now()}],
                   comments:[...(task.comments||[]),{id:uid(),author:userName,role:"internal",text:"REJECTED: "+reason,ts:Date.now()}],
                 });
                 setShowReject(false);
@@ -1546,30 +1615,81 @@ function TaskDetail({task,userName,loadPhoto,savePhoto,requestAnnotate,onLightbo
           {(task.photos||[]).length>0&&<div style={{fontSize:12,color:C.stone,marginTop:6}}>Tap any photo to enlarge.</div>}
         </TaskSection>
 
-        {/* After / Correction Photos — always visible once rejected or has after photos */}
-        {(isRejected||hasAfterPhotos)&&(
-          <TaskSection title={`After / Correction Photos (${(task.afterPhotos||[]).length})`} sectionAccent={hasAfterPhotos?C.sage:C.rust}>
-            {isRejected&&!hasAfterPhotos&&(
-              <div style={{fontSize:13,color:C.rust,marginBottom:12,padding:"9px 12px",background:"#FDF0EF",borderRadius:7,fontWeight:600}}>
-                Upload photos showing the corrected work before re-submitting for approval.
+        {/* Rejection History — always shown once any rejection has occurred */}
+        {((task.rejectionHistory||[]).length>0||(task.afterPhotos||[]).length>0||task.rejectionReason)&&(
+          <TaskSection title={`Rejection History (${(task.rejectionHistory||[]).length||1}×)`} sectionAccent={C.rust}>
+            {/* Show each rejection event */}
+            {(task.rejectionHistory||[]).length>0?(
+              <div style={{display:"grid",gap:12}}>
+                {(task.rejectionHistory||[]).map((rej,i)=>(
+                  <div key={rej.id||i} style={{borderLeft:`3px solid ${C.rust}`,paddingLeft:12}}>
+                    <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
+                      <span style={{...CAPT,fontSize:10,fontWeight:700,color:C.rust}}>Rejection #{rej.count||i+1}</span>
+                      <span style={{fontSize:11.5,color:C.stone}}>{fmtDT(rej.ts)} · {rej.by}</span>
+                    </div>
+                    <div style={{fontSize:13.5,fontWeight:600,color:C.rust,marginBottom:rej.photoIds?.length?8:0}}>{rej.reason}</div>
+                    {(rej.photoIds||[]).length>0&&(
+                      <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                        {rej.photoIds.map(pid=><PhotoThumb key={pid} pid={pid} loadPhoto={loadPhoto} size={80} onClick={()=>onLightbox(pid)}/>)}
+                      </div>
+                    )}
+                  </div>
+                ))}
               </div>
+            ):(
+              /* Legacy: single rejectionReason field before history was tracked */
+              task.rejectionReason&&(
+                <div style={{borderLeft:`3px solid ${C.rust}`,paddingLeft:12}}>
+                  <div style={{fontSize:13.5,fontWeight:600,color:C.rust}}>{task.rejectionReason}</div>
+                </div>
+              )
             )}
-            <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:hasAfterPhotos&&isRejected?12:0}}>
-              {(task.afterPhotos||[]).map(pid=><PhotoThumb key={pid} pid={pid} loadPhoto={loadPhoto} size={100} onClick={()=>onLightbox(pid)}/>)}
-              <button onClick={()=>afterFileRef.current.click()}
-                style={{width:100,height:100,borderRadius:8,border:`2px dashed ${hasAfterPhotos?C.sage:C.rust}`,background:"#fff",color:hasAfterPhotos?C.sage:C.rust,fontSize:13,cursor:"pointer",fontWeight:600,lineHeight:1.3}}>
-                📷<br/>{hasAfterPhotos?"Add more":"Add after photo"}
-              </button>
-              <input ref={afterFileRef} type="file" accept="image/*" capture="environment" onChange={addAfterPhoto} style={{display:"none"}}/>
+
+            {/* After / Correction Photos — always visible, never disappears */}
+            <div style={{marginTop:(task.rejectionHistory||[]).length||task.rejectionReason?14:0}}>
+              <div style={{...CAPT,fontSize:10,fontWeight:700,color:hasAfterPhotos?C.sage:C.taupe,marginBottom:8}}>
+                After / Correction Photos ({(task.afterPhotos||[]).length})
+              </div>
+              {isRejected&&!hasAfterPhotos&&(
+                <div style={{fontSize:13,color:C.rust,marginBottom:10,padding:"8px 12px",background:"#FDF0EF",borderRadius:7,fontWeight:600}}>
+                  Upload photos of the corrected work before re-submitting.
+                </div>
+              )}
+              <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:isRejected?10:0}}>
+                {(task.afterPhotos||[]).map(pid=><PhotoThumb key={pid} pid={pid} loadPhoto={loadPhoto} size={100} onClick={()=>onLightbox(pid)}/>)}
+                <button onClick={()=>afterFileRef.current.click()}
+                  style={{width:100,height:100,borderRadius:8,border:`2px dashed ${hasAfterPhotos?C.sage:C.rust}`,background:"#fff",color:hasAfterPhotos?C.sage:C.rust,fontSize:13,cursor:"pointer",fontWeight:600,lineHeight:1.3}}>
+                  📷<br/>{hasAfterPhotos?"Add more":"Add photo"}
+                </button>
+                <input ref={afterFileRef} type="file" accept="image/*" capture="environment" onChange={addAfterPhoto} style={{display:"none"}}/>
+              </div>
+              {isRejected&&(
+                <Btn kind="dark" onClick={handleReApproval} style={{width:"100%",fontSize:14,padding:"12px",background:C.sage}}>
+                  ↺ Re-submit for approval{!hasAfterPhotos&&" (no after photo yet)"}
+                </Btn>
+              )}
             </div>
-            {isRejected&&(
-              <Btn kind="dark" onClick={handleReApproval} style={{width:"100%",fontSize:14,padding:"12px",marginTop:8,background:C.sage}}>
-                ↺ Re-submit for approval{!hasAfterPhotos&&" (no after photo yet)"}
-              </Btn>
-            )}
           </TaskSection>
         )}
 
+
+        {/* Notes & Comments */}
+        <TaskSection title={`Notes & Comments${(task.comments||[]).filter(c=>!c.text.startsWith("After / correction")).length>0?" ("+((task.comments||[]).filter(c=>!c.text.startsWith("After / correction")).length)+")":""}`}>
+          <CommentBox
+            comments={task.comments||[]}
+            userName={userName}
+            accent={accent}
+            mentionables={mentionables}
+            onAdd={text=>{
+              const mentions=parseMentions(text);
+              const newMentions=[...new Set([...(task.mentions||[]),...mentions])];
+              onUpdate({
+                comments:[...(task.comments||[]),{id:uid(),author:userName,role:"internal",text:text.trim(),ts:Date.now()}],
+                mentions:newMentions,
+              });
+            }}
+          />
+        </TaskSection>
 
         {/* Activity Timeline */}
         <TaskSection title="Activity Timeline" noBorder>
