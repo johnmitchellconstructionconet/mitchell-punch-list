@@ -1379,10 +1379,14 @@ function TaskList({tasks,showProject,onOpen,loadPhoto}){
   const PRI_COLORS = {High:C.rust, Medium:C.amber, Low:C.taupe};
   const PRI_BG     = {High:"#FDF2F0", Medium:"#FDF8EF", Low:"#F5F4F2"};
 
-  // Group tasks by priority, preserving done-tasks-last order within each group
+  // Split rejected out first — they get their own section at the top
+  const rejectedTasks = tasks.filter(t=>t.approval==="Rejected");
+  const nonRejected   = tasks.filter(t=>t.approval!=="Rejected");
+
+  // Group non-rejected by priority
   const groups = PRI_ORDER_LIST.map(pri=>({
     priority: pri,
-    tasks: tasks.filter(t=>t.priority===pri),
+    tasks: nonRejected.filter(t=>t.priority===pri),
   })).filter(g=>g.tasks.length>0);
 
   // If no priority data at all, fall back to flat list
@@ -1395,9 +1399,25 @@ function TaskList({tasks,showProject,onOpen,loadPhoto}){
 
   return(
     <div style={{padding:"12px 12px 24px"}}>
+      {/* ── Needs Corrections section — always first ── */}
+      {rejectedTasks.length>0&&(
+        <div style={{marginBottom:28}}>
+          <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12}}>
+            <div style={{display:"flex",alignItems:"center",gap:7,background:"#FDECEA",border:`1px solid ${C.rust}44`,borderRadius:6,padding:"5px 12px"}}>
+              <span style={{fontSize:13}}>✗</span>
+              <span style={{...CAPT,fontSize:11,fontWeight:700,color:C.rust}}>Needs Corrections</span>
+              <span style={{fontSize:12,color:C.rust,opacity:0.7,fontWeight:600}}>{rejectedTasks.length}</span>
+            </div>
+            <div style={{flex:1,height:1,background:`${C.rust}33`}}/>
+          </div>
+          <div style={{display:"grid",gap:9,gridTemplateColumns:"repeat(auto-fill,minmax(300px,1fr))"}}>
+            {rejectedTasks.map(t=><TaskCard key={t.id} task={t} showProject={showProject} onOpen={()=>onOpen(t.id)} loadPhoto={loadPhoto}/>)}
+          </div>
+        </div>
+      )}
+      {/* ── Priority groups ── */}
       {groups.map((g,gi)=>(
         <div key={g.priority} style={{marginBottom:gi<groups.length-1?28:0}}>
-          {/* Priority section header */}
           <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12}}>
             <div style={{display:"flex",alignItems:"center",gap:7,background:PRI_BG[g.priority],border:`1px solid ${PRI_COLORS[g.priority]}22`,borderRadius:6,padding:"5px 12px"}}>
               <span style={{width:8,height:8,borderRadius:"50%",background:PRI_COLORS[g.priority],display:"inline-block",flexShrink:0}}/>
@@ -1406,7 +1426,6 @@ function TaskList({tasks,showProject,onOpen,loadPhoto}){
             </div>
             <div style={{flex:1,height:1,background:`${PRI_COLORS[g.priority]}33`}}/>
           </div>
-          {/* Cards grid */}
           <div style={{display:"grid",gap:9,gridTemplateColumns:"repeat(auto-fill,minmax(300px,1fr))"}}>
             {g.tasks.map(t=><TaskCard key={t.id} task={t} showProject={showProject} onOpen={()=>onOpen(t.id)} loadPhoto={loadPhoto}/>)}
           </div>
