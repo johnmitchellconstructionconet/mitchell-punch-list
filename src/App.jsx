@@ -1474,7 +1474,7 @@ function TaskDetail({task,userName,loadPhoto,savePhoto,requestAnnotate,onLightbo
           <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
             <span style={{...CAPT,fontSize:10,color:C.taupe,fontWeight:600}}>Approval:</span>
             <Btn kind="green" style={{padding:"7px 13px",fontSize:13}} onClick={()=>onUpdate({approval:"Approved",status:"Done",approvedBy:userName,approvedAt:Date.now(),statusHistory:[...(task.statusHistory||[]),{status:"Approved",by:userName,ts:Date.now()}]})}>✓ Approve</Btn>
-            <Btn kind="ghost" style={{padding:"7px 13px",fontSize:13,border:`1px solid ${C.amber}`,color:C.amber}} onClick={()=>{if(!window.confirm("Mark as Needs Corrections?"))return;onUpdate({approval:"Rejected",status:"Reported",approvedBy:null,approvedAt:null,statusHistory:[...(task.statusHistory||[]),{status:"Needs Corrections",by:userName,ts:Date.now()}]});}}>⚑ Needs Corrections</Btn>
+            <Btn kind="ghost" style={{padding:"7px 13px",fontSize:13,border:`1px solid ${C.amber}`,color:C.amber}} onClick={()=>onUpdate({approval:"Rejected",status:"Reported",approvedBy:null,approvedAt:null,statusHistory:[...(task.statusHistory||[]),{status:"Needs Corrections",by:userName,ts:Date.now()}]})}>⚑ Needs Corrections</Btn>
             {task.approval==="Approved"&&<Btn kind="ghost" style={{padding:"7px 13px",fontSize:13}} onClick={()=>onUpdate({approval:"Pending",status:"Reported",approvedBy:null,approvedAt:null})}>Clear</Btn>}
             <div style={{flex:1}}/>
             <Btn kind="ghost" style={{color:C.rust,fontSize:13,padding:"7px 13px"}} onClick={()=>window.confirm("Delete this task?")&&onDelete()}>Delete</Btn>
