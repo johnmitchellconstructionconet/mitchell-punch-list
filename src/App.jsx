@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import {
   getProjects, upsertProject, deleteProject,
-  getTasks, upsertTask, deleteTask,
+  getTasks, upsertTask, updateTask, deleteTask,
   getCompanies, upsertCompany, deleteCompany,
   getPhoto, savePhoto as dbSavePhoto,
   getSetting, setSetting,
@@ -1397,8 +1397,7 @@ function RejectionPanel({task,userName,savePhoto,requestAnnotate,onSaved,onCance
     };
 
     // Save directly to Supabase — bypass the React state chain entirely
-    const {updateTask:dbUpdate}=await import("./supabase.js");
-    await dbUpdate(updatedTask);
+    await updateTask(updatedTask);
 
     onSaved(updatedTask);
     setSaving(false);
