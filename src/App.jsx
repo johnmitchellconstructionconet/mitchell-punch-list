@@ -337,21 +337,20 @@ function PubTaskDetail({task,loadPhoto,onLightbox,onClose,onUpdate,trades=[]}){
   const overdue=task.dueDate&&task.dueDate<today()&&task.approval!=="Approved";
   const jobUrl=(()=>{try{return window.location.href;}catch{return "";}})();
   const [tradeName,setTradeName]=useState("");
-  const [tradeComment,setTradeComment]=useState("");
   const [posting,setPosting]=useState(false);
 
-  const postComment=async()=>{
-    if(!tradeName.trim()||!tradeComment.trim())return;
+  const postComment=async(text)=>{
+    if(!tradeName.trim()||!text?.trim())return;
     setPosting(true);
-    const newComment={id:uid(),author:tradeName.trim(),role:"trade",text:tradeComment.trim(),ts:Date.now()};
-    const mentions=parseMentions(tradeComment);
+    const newComment={id:uid(),author:tradeName.trim(),role:"trade",text:text.trim(),ts:Date.now()};
+    const mentions=parseMentions(text);
     const existingMentions=task.mentions||[];
     const newMentions=[...new Set([...existingMentions,...mentions])];
     await onUpdate(task.id,{
       comments:[...(task.comments||[]),newComment],
       mentions:newMentions,
     });
-    setTradeComment("");setPosting(false);
+    setPosting(false);
   };
 
   const timeline=[
@@ -443,15 +442,16 @@ function PubTaskDetail({task,loadPhoto,onLightbox,onClose,onUpdate,trades=[]}){
               <input value={tradeName} onChange={e=>setTradeName(e.target.value)}
                 placeholder="Your name or company"
                 style={{width:"100%",marginBottom:8,boxSizing:"border-box",padding:"9px 12px",fontSize:14,borderRadius:8,border:`1px solid ${C.line}`}}/>
-              <div style={{display:"flex",gap:8,alignItems:"flex-end"}}>
-                <MentionInput
-                  value={tradeComment} onChange={setTradeComment}
-                  onSubmit={postComment}
-                  placeholder={`Message… type @ to mention someone`}
-                  mentionables={mentionables}
-                  style={{fontSize:14}}/>
-                <Btn onClick={postComment} disabled={posting||!tradeName.trim()||!tradeComment.trim()}
-                  style={{opacity:(posting||!tradeName.trim()||!tradeComment.trim())?0.4:1,whiteSpace:"nowrap",alignSelf:"flex-end"}}>
+              <div style={{display:"flex",gap:8}}>
+                <textarea id="trade-comment" rows={2}
+                  placeholder="Message…"
+                  style={{flex:1,resize:"vertical",boxSizing:"border-box",padding:"9px 12px",fontSize:14,borderRadius:8,border:`1px solid ${C.line}`,lineHeight:1.5}}/>
+                <Btn disabled={posting||!tradeName.trim()}
+                  style={{opacity:(posting||!tradeName.trim())?0.4:1,whiteSpace:"nowrap",alignSelf:"flex-end"}}
+                  onClick={()=>{
+                    const ta=document.getElementById("trade-comment");
+                    if(ta&&ta.value.trim())postComment(ta.value).then(()=>{ta.value="";});
+                  }}>
                   {posting?"Posting…":"Post"}
                 </Btn>
               </div>
@@ -816,22 +816,28 @@ function parseMentions(text){
   return out;
 }
 
-function MentionInput({value,onChange,onSubmit,placeholder,mentionables,submitLabel="Post",style={}}){
+const MentionInput=React.forwardRef(function MentionInput({onSubmit,placeholder,mentionables,style={}},ref){
+  const [localVal,setLocalVal]=useState("");
   const [showDrop,setShowDrop]=useState(false);
   const [dropItems,setDropItems]=useState([]);
   const [atPos,setAtPos]=useState(-1);
   const inputRef=useRef();
 
+  React.useImperativeHandle(ref,()=>({
+    submit:()=>{if(localVal.trim()&&onSubmit){onSubmit(localVal);setLocalVal("");}},
+    clear:()=>setLocalVal(""),
+    get value(){return localVal;},
+  }));
+
   const handleChange=e=>{
     const v=e.target.value;
-    onChange(v);
-    // Detect @ trigger
+    setLocalVal(v);
     const cur=e.target.selectionStart;
     const before=v.slice(0,cur);
     const atIdx=before.lastIndexOf("@");
     if(atIdx>=0&&(atIdx===0||/\s/.test(before[atIdx-1]))){
       const query=before.slice(atIdx+1).toLowerCase();
-      const matches=mentionables.filter(m=>m.toLowerCase().includes(query)).slice(0,8);
+      const matches=(mentionables||[]).filter(m=>m.toLowerCase().includes(query)).slice(0,8);
       setDropItems(matches);
       setAtPos(atIdx);
       setShowDrop(matches.length>0);
@@ -842,10 +848,10 @@ function MentionInput({value,onChange,onSubmit,placeholder,mentionables,submitLa
 
   const insertMention=name=>{
     const cur=inputRef.current.selectionStart;
-    const before=value.slice(0,atPos);
-    const after=value.slice(cur);
+    const before=localVal.slice(0,atPos);
+    const after=localVal.slice(cur);
     const newVal=before+"@"+name+" "+after;
-    onChange(newVal);
+    setLocalVal(newVal);
     setShowDrop(false);
     setTimeout(()=>{
       inputRef.current.focus();
@@ -855,13 +861,16 @@ function MentionInput({value,onChange,onSubmit,placeholder,mentionables,submitLa
   };
 
   const handleKey=e=>{
-    if(e.key==="Enter"&&!e.shiftKey&&!showDrop){e.preventDefault();onSubmit&&onSubmit();}
+    if(e.key==="Enter"&&!e.shiftKey&&!showDrop){
+      e.preventDefault();
+      if(localVal.trim()&&onSubmit){onSubmit(localVal);setLocalVal("");}
+    }
     if(e.key==="Escape") setShowDrop(false);
   };
 
   return(
     <div style={{flex:1,position:"relative"}}>
-      <textarea ref={inputRef} value={value} onChange={handleChange} onKeyDown={handleKey}
+      <textarea ref={inputRef} value={localVal} onChange={handleChange} onKeyDown={handleKey}
         placeholder={placeholder} rows={2}
         style={{width:"100%",resize:"vertical",boxSizing:"border-box",padding:"9px 12px",fontSize:14,borderRadius:8,border:`1px solid ${C.line}`,lineHeight:1.5,...style}}/>
       {showDrop&&(
@@ -878,7 +887,7 @@ function MentionInput({value,onChange,onSubmit,placeholder,mentionables,submitLa
       )}
     </div>
   );
-}
+});
 
 /* highlight @mentions in rendered text */
 function MentionText({text,highlight}){
@@ -895,14 +904,13 @@ function MentionText({text,highlight}){
 }
 
 function Modal({children,onClose,wide,xwide}){
-  const scrollRef=useRef();
+  const backdropRef=useRef();
   return(
-    <div className="no-print"
+    <div ref={backdropRef} className="no-print"
+      onMouseDown={e=>{if(e.target===backdropRef.current)onClose();}}
       style={{position:"fixed",inset:0,zIndex:50,background:"rgba(30,28,26,0.55)"}}>
-      <div ref={scrollRef} style={{position:"absolute",inset:0,overflowY:"auto",display:"flex",alignItems:"flex-start",justifyContent:"center",padding:"22px 8px"}}
-        onMouseDown={e=>{if(e.target===scrollRef.current)onClose();}}>
-        <div onMouseDown={e=>e.stopPropagation()}
-          style={{background:C.paper,borderRadius:14,width:"100%",maxWidth:xwide?1160:wide?980:620,boxShadow:"0 16px 48px rgba(0,0,0,0.26)",flexShrink:0}}>
+      <div style={{position:"absolute",inset:0,overflowY:"auto",display:"flex",alignItems:"flex-start",justifyContent:"center",padding:"22px 8px"}}>
+        <div style={{background:C.paper,borderRadius:14,width:"100%",maxWidth:xwide?1160:wide?980:620,boxShadow:"0 16px 48px rgba(0,0,0,0.26)",flexShrink:0}}>
           {children}
         </div>
       </div>
@@ -1230,16 +1238,23 @@ function PhotoThumb({pid,loadPhoto,size=70,onClick}){
   );
 }
 
+function TaskSection({title,children,noBorder,sectionAccent}){
+  return(
+    <div>
+      <div style={{...CAPT,fontSize:10,fontWeight:700,color:sectionAccent||C.stone,padding:"10px 18px 6px",background:sectionAccent?`${sectionAccent}14`:C.mist,borderTop:`1px solid ${C.line}`,borderBottom:`1px solid ${C.line}`}}>{title}</div>
+      <div style={{padding:"12px 18px",borderBottom:noBorder?"none":`1px solid ${C.line}`}}>{children}</div>
+    </div>
+  );
+}
+
 function TaskDetail({task,userName,loadPhoto,savePhoto,requestAnnotate,onLightbox,onClose,onUpdate,onDelete,trades,projects,companies}){
   const co=useCompany();
   const accent=co?.accentColor||C.gold;
   const [editing,setEditing]=useState(false);
   const [editF,setEditF]=useState({area:task.area,description:task.description,trade:task.trade,priority:task.priority,dueDate:task.dueDate||""});
   const startEdit=()=>{setEditF({area:task.area,description:task.description,trade:task.trade,priority:task.priority,dueDate:task.dueDate||""});setEditing(true);};
-  const [comment,setComment]=useState("");
-  const [rejectReason,setRejectReason]=useState("");
   const [showRejectForm,setShowRejectForm]=useState(false);
-  const [rejectPhotos,setRejectPhotos]=useState([]); // staged local data-URLs before saving
+  const [rejectPhotos,setRejectPhotos]=useState([]);
   const fileRef=useRef();
   const afterFileRef=useRef();
   const rejectFileRef=useRef();
@@ -1255,7 +1270,7 @@ function TaskDetail({task,userName,loadPhoto,savePhoto,requestAnnotate,onLightbo
   const tradeInfo=companies?.find(c=>c.name===task.trade);
 
   const addComment=text=>{
-    if(!text.trim())return;
+    if(!text?.trim())return;
     const mentions=parseMentions(text);
     const existingMentions=task.mentions||[];
     const newMentions=[...new Set([...existingMentions,...mentions])];
@@ -1263,7 +1278,6 @@ function TaskDetail({task,userName,loadPhoto,savePhoto,requestAnnotate,onLightbo
       comments:[...(task.comments||[]),{id:uid(),author:userName,role:"internal",text:text.trim(),ts:Date.now()}],
       mentions:newMentions,
     });
-    setComment("");
   };
   const addPhoto=async e=>{const file=e.target.files[0];e.target.value="";if(!file)return;const c=await compress(file);requestAnnotate(c,async ann=>{const pid=await savePhoto(ann);onUpdate({photos:[...(task.photos||[]),pid]});});};
   const addAfterPhoto=async e=>{const file=e.target.files[0];e.target.value="";if(!file)return;const c=await compress(file);requestAnnotate(c,async ann=>{const pid=await savePhoto(ann);onUpdate({afterPhotos:[...(task.afterPhotos||[]),pid],comments:[...(task.comments||[]),{id:uid(),author:userName,role:"internal",text:"After / correction photo added.",ts:Date.now()}]});});};
@@ -1276,7 +1290,8 @@ function TaskDetail({task,userName,loadPhoto,savePhoto,requestAnnotate,onLightbo
   };
 
   const handleReject=async()=>{
-    if(!rejectReason.trim())return;
+    const rejectReason=(document.getElementById("reject-reason")?.value||"").trim();
+    if(!rejectReason)return;
     // Save any staged rejection photos first
     const savedIds=[];
     for(const dataUrl of rejectPhotos){
@@ -1293,7 +1308,9 @@ function TaskDetail({task,userName,loadPhoto,savePhoto,requestAnnotate,onLightbo
       statusHistory:[...(task.statusHistory||[]),{status:"Rejected",by:userName,ts:Date.now()}],
       comments:[...(task.comments||[]),{id:uid(),author:userName,role:"internal",text:"REJECTED: "+rejectReason.trim(),ts:Date.now()}],
     });
-    setRejectReason("");setRejectPhotos([]);setShowRejectForm(false);
+    const rta=document.getElementById("reject-reason");
+    if(rta) rta.value="";
+    setRejectPhotos([]);setShowRejectForm(false);
   };
 
   const handleReApproval=()=>{
@@ -1311,12 +1328,6 @@ function TaskDetail({task,userName,loadPhoto,savePhoto,requestAnnotate,onLightbo
     ...(task.comments||[]).map(c=>({ts:c.ts,label:c.text,by:c.author,color:C.stone,isComment:true})),
   ].sort((a,b)=>a.ts-b.ts);
 
-  const Section=({title,children,noBorder,sectionAccent})=>(
-    <div>
-      <div style={{...CAPT,fontSize:10,fontWeight:700,color:sectionAccent||C.stone,padding:"10px 18px 6px",background:sectionAccent?`${sectionAccent}14`:C.mist,borderTop:`1px solid ${C.line}`,borderBottom:`1px solid ${C.line}`}}>{title}</div>
-      <div style={{padding:"12px 18px",borderBottom:noBorder?"none":`1px solid ${C.line}`}}>{children}</div>
-    </div>
-  );
 
   return(
     <Modal onClose={onClose} wide>
@@ -1381,7 +1392,7 @@ function TaskDetail({task,userName,loadPhoto,savePhoto,requestAnnotate,onLightbo
         )}
 
         {/* Task Details */}
-        <Section title="Task Details">
+        <TaskSection title="Task Details">
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"10px 16px"}}>
             <div><div style={{...CAPT,fontSize:9.5,color:C.stone,marginBottom:3}}>Assignee</div><div style={{fontWeight:700}}>{task.trade||"—"}</div>{tradeInfo?.contactName&&<div style={{fontSize:12,color:C.taupe}}>{tradeInfo.contactName}</div>}{tradeInfo?.phone&&<div style={{fontSize:12,color:C.taupe}}>{tradeInfo.phone}</div>}</div>
             <div><div style={{...CAPT,fontSize:9.5,color:C.stone,marginBottom:3}}>Location</div><div style={{fontWeight:700}}>{task.area||"—"}</div></div>
@@ -1395,10 +1406,10 @@ function TaskDetail({task,userName,loadPhoto,savePhoto,requestAnnotate,onLightbo
               ✓ Approved by {task.approvedBy} — {fmtDate(new Date(task.approvedAt).toISOString().slice(0,10))}
             </div>
           )}
-        </Section>
+        </TaskSection>
 
         {/* Progress & Approval */}
-        <Section title="Progress & Approval">
+        <TaskSection title="Progress & Approval">
           <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center",paddingBottom:10,marginBottom:10,borderBottom:`1px solid ${C.line}`}}>
             <span style={{...CAPT,fontSize:10,color:C.taupe,fontWeight:600}}>Progress:</span>
             {["Reported","Scheduled","Done"].map((s,i,arr)=>(
@@ -1429,10 +1440,9 @@ function TaskDetail({task,userName,loadPhoto,savePhoto,requestAnnotate,onLightbo
               {/* Reason textarea */}
               <div style={{padding:"12px 14px",borderBottom:`1px solid #F5C6C2`}}>
                 <textarea
+                  id="reject-reason"
                   rows={4}
-                  value={rejectReason}
-                  onChange={e=>setRejectReason(e.target.value)}
-                  placeholder="Be specific — e.g. Grout lines uneven in NW corner, lippage exceeds 1/16″. Needs to be re-done."
+                  placeholder="Be specific — e.g. Grout lines uneven in NW corner, lippage exceeds 1/16. Needs to be re-done."
                   style={{width:"100%",border:`1px solid #E8BFBA`,borderRadius:8,padding:"10px 12px",fontSize:14,resize:"vertical",boxSizing:"border-box",background:"#fff",outline:"none",lineHeight:1.5}}
                 />
               </div>
@@ -1456,28 +1466,28 @@ function TaskDetail({task,userName,loadPhoto,savePhoto,requestAnnotate,onLightbo
               </div>
               {/* Action buttons */}
               <div style={{padding:"10px 14px",display:"flex",gap:8,justifyContent:"flex-end",background:"#F9E5E3"}}>
-                <Btn kind="ghost" onClick={()=>{setShowRejectForm(false);setRejectReason("");setRejectPhotos([])}}>Cancel</Btn>
-                <Btn kind="red" disabled={!rejectReason.trim()} style={{opacity:rejectReason.trim()?1:0.4}} onClick={handleReject}>
+                <Btn kind="ghost" onClick={()=>{const rta=document.getElementById("reject-reason");if(rta)rta.value="";setRejectPhotos([]);setShowRejectForm(false);}}>Cancel</Btn>
+                <Btn kind="red" onClick={handleReject}>
                   ✗ Confirm rejection
                 </Btn>
               </div>
             </div>
           )}
-        </Section>
+        </TaskSection>
 
         {/* Before / Original Photos */}
-        <Section title={`Before / Original Photos (${(task.photos||[]).length})`}>
+        <TaskSection title={`Before / Original Photos (${(task.photos||[]).length})`}>
           <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
             {(task.photos||[]).map(pid=><PhotoThumb key={pid} pid={pid} loadPhoto={loadPhoto} size={100} onClick={()=>onLightbox(pid)}/>)}
             <button onClick={()=>fileRef.current.click()} style={{width:100,height:100,borderRadius:8,border:`2px dashed ${C.line}`,background:"#fff",color:C.taupe,fontSize:13,cursor:"pointer"}}>📷 Add</button>
             <input ref={fileRef} type="file" accept="image/*" capture="environment" onChange={addPhoto} style={{display:"none"}}/>
           </div>
           {(task.photos||[]).length>0&&<div style={{fontSize:12,color:C.stone,marginTop:6}}>Tap any photo to enlarge.</div>}
-        </Section>
+        </TaskSection>
 
         {/* After / Correction Photos — always visible once rejected or has after photos */}
         {(isRejected||hasAfterPhotos)&&(
-          <Section title={`After / Correction Photos (${(task.afterPhotos||[]).length})`} sectionAccent={hasAfterPhotos?C.sage:C.rust}>
+          <TaskSection title={`After / Correction Photos (${(task.afterPhotos||[]).length})`} sectionAccent={hasAfterPhotos?C.sage:C.rust}>
             {isRejected&&!hasAfterPhotos&&(
               <div style={{fontSize:13,color:C.rust,marginBottom:12,padding:"9px 12px",background:"#FDF0EF",borderRadius:7,fontWeight:600}}>
                 Upload photos showing the corrected work before re-submitting for approval.
@@ -1496,11 +1506,11 @@ function TaskDetail({task,userName,loadPhoto,savePhoto,requestAnnotate,onLightbo
                 ↺ Re-submit for approval{!hasAfterPhotos&&" (no after photo yet)"}
               </Btn>
             )}
-          </Section>
+          </TaskSection>
         )}
 
         {/* Notes & Comments */}
-        <Section title="Notes & Comments">
+        <TaskSection title="Notes & Comments">
           <div style={{display:"grid",gap:7,marginBottom:10}}>
             {(task.comments||[]).length===0&&<div style={{fontSize:13.5,color:C.taupe}}>No comments yet.</div>}
             {(task.comments||[]).map(c=>(
@@ -1513,15 +1523,19 @@ function TaskDetail({task,userName,loadPhoto,savePhoto,requestAnnotate,onLightbo
               </div>
             ))}
           </div>
-          <div style={{display:"flex",gap:8,alignItems:"flex-end"}}>
-            <MentionInput value={comment} onChange={setComment} onSubmit={()=>addComment(comment)}
-              placeholder="Add a note… type @ to mention someone" mentionables={mentionables}/>
-            <Btn kind="ghost" onClick={()=>addComment(comment)} style={{alignSelf:"flex-end"}}>Post</Btn>
+          <div style={{display:"flex",gap:8}}>
+            <textarea id="internal-comment" rows={2}
+              placeholder="Add a note…"
+              style={{flex:1,resize:"vertical",boxSizing:"border-box",padding:"9px 12px",fontSize:14,borderRadius:8,border:`1px solid ${C.line}`,lineHeight:1.5}}/>
+            <Btn kind="ghost" style={{alignSelf:"flex-end"}} onClick={()=>{
+              const ta=document.getElementById("internal-comment");
+              if(ta&&ta.value.trim()){addComment(ta.value);ta.value="";}
+            }}>Post</Btn>
           </div>
-        </Section>
+        </TaskSection>
 
         {/* Activity Timeline */}
-        <Section title="Activity Timeline" noBorder>
+        <TaskSection title="Activity Timeline" noBorder>
           <div style={{position:"relative",paddingLeft:22}}>
             <div style={{position:"absolute",left:6,top:4,bottom:4,width:2,background:C.line}}/>
             {timeline.map((ev,i)=>(
@@ -1533,7 +1547,7 @@ function TaskDetail({task,userName,loadPhoto,savePhoto,requestAnnotate,onLightbo
               </div>
             ))}
           </div>
-        </Section>
+        </TaskSection>
 
       </div>
     </Modal>
