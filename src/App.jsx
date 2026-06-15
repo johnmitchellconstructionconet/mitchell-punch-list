@@ -192,9 +192,10 @@ function JobLinkApp({ jobId }) {
     await upsertTask({...tasks.find(t=>t.id===id)||{},...patch,id});
   };
 
-  const trades = [...new Set(tasks.map(t=>t.trade).filter(Boolean))].sort();
+  const toArr = t => Array.isArray(t.trades)&&t.trades.length>0 ? t.trades : (t.trade?t.trade.split(",").map(s=>s.trim()).filter(Boolean):[]);
+  const trades = [...new Set(tasks.flatMap(t=>toArr(t)))].sort();
   const activeFilter = tradeFilter || "All";
-  const filteredTasks = activeFilter === "All" ? tasks : tasks.filter(t=>t.trade===activeFilter);
+  const filteredTasks = activeFilter === "All" ? tasks : tasks.filter(t=>toArr(t).includes(activeFilter));
   const byArea = {};
   for (const t of filteredTasks) (byArea[t.area]=byArea[t.area]||[]).push(t);
   const openCount = filteredTasks.filter(t=>t.approval!=="Approved").length;
