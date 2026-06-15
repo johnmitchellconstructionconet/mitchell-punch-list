@@ -544,14 +544,7 @@ function InternalApp() {
 
   useEffect(()=>{ if(authed) loadAll(); },[authed,loadAll]);
 
-  // Auto-refresh removed — manual sync button available in header.
-  // Auto-refresh was reverting unsaved or in-flight changes.
-
   // ── Persist helpers ──
-  const pP = async (next) => {
-    setProjects(next);
-    // upsert changed ones — for simplicity upsert the one passed if array
-  };
   const addProject = async (proj) => {
     setProjects(p=>[proj,...p]);
     await upsertProject(proj);
@@ -568,9 +561,7 @@ function InternalApp() {
   const updateTaskById = async (id, patch) => {
     const existing = tasksRef.current.find(x=>x.id===id) || {};
     const merged = {...existing, ...patch, id};
-    // Update UI immediately (optimistic)
     setTasks(t=>t.map(x=>x.id===id ? merged : x));
-    // Save to DB — if it fails, reload from DB to restore truth
     try {
       await upsertTask(merged);
     } catch(e) {
@@ -1336,18 +1327,6 @@ function CommentBox({comments,userName,accent,onAdd,mentionables=[]}){
   );
 }
 
-/* Stable reject textarea — never re-mounts, exposes value via id */
-function RejectReasonInput({id}){
-  return(
-    <textarea id={id} rows={4}
-      placeholder="Be specific — e.g. Grout lines uneven in NW corner, lippage exceeds 1/16. Needs to be re-done."
-      style={{width:"100%",border:`1px solid #E8BFBA`,borderRadius:8,padding:"10px 12px",fontSize:14,resize:"vertical",boxSizing:"border-box",background:"#fff",outline:"none",lineHeight:1.5}}
-    />
-  );
-}
-
-
-
 function TaskSection({title,children,noBorder,sectionAccent}){
   return(
     <div>
@@ -1375,9 +1354,6 @@ function TaskDetail({task,userName,loadPhoto,savePhoto,requestAnnotate,onLightbo
   const addPhoto=async e=>{const file=e.target.files[0];e.target.value="";if(!file)return;const c=await compress(file);requestAnnotate(c,async ann=>{const pid=await savePhoto(ann);onUpdate({photos:[...(task.photos||[]),pid]});});};
   const saveEdit=()=>{onUpdate({area:editF.area.trim(),description:editF.description.trim(),trade:editF.trade.trim(),priority:editF.priority,dueDate:editF.dueDate});setEditing(false);};
 
-
-
-
   const timeline=[
     {ts:task.createdAt,label:"Task reported",by:task.createdBy||"Team",color:C.taupe},
     ...(task.statusHistory||[]).map(h=>({
@@ -1388,7 +1364,6 @@ function TaskDetail({task,userName,loadPhoto,savePhoto,requestAnnotate,onLightbo
     })),
     ...(task.comments||[]).filter(c=>!c.text.startsWith("REJECTED:")).map(c=>({ts:c.ts,label:c.text,by:c.author,color:C.stone,isComment:true})),
   ].sort((a,b)=>a.ts-b.ts);
-
 
   return(
     <Modal onClose={onClose} wide>
@@ -1440,7 +1415,6 @@ function TaskDetail({task,userName,loadPhoto,savePhoto,requestAnnotate,onLightbo
           </div>
         )}
 
-        {/* Rejection banner */}
         {/* Task Details */}
         <TaskSection title="Task Details">
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"10px 16px"}}>
@@ -1482,7 +1456,7 @@ function TaskDetail({task,userName,loadPhoto,savePhoto,requestAnnotate,onLightbo
           </div>
         </TaskSection>
 
-        {/* Before / Original Photos */}
+        {/* Photos */}
         <TaskSection title={`Photos (${(task.photos||[]).length})`}>
           <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
             {(task.photos||[]).map(pid=><PhotoThumb key={pid} pid={pid} loadPhoto={loadPhoto} size={100} onClick={()=>onLightbox(pid)}/>)}
@@ -1549,6 +1523,25 @@ function EditJobModal({project,onCancel,onSave}){
   </div></Modal>);
 }
 
+function NewJobModal({onCancel,onCreate}){
+  const [f,setF]=useState({name:"",client:"",address:"",siteContact:"",sitePhone:""});
+  const set=k=>e=>setF({...f,[k]:e.target.value}); const ok=f.name.trim();
+  return(<Modal onClose={onCancel}><div style={{padding:18}}>
+    <h2 style={{...DISP,fontSize:26,margin:"0 0 13px"}}>New Job</h2>
+    <Lbl>Job name</Lbl><input value={f.name} onChange={set("name")} placeholder="e.g. Morris Residence" style={{marginBottom:11}} autoFocus/>
+    <Lbl>Client</Lbl><input value={f.client} onChange={set("client")} placeholder="Optional" style={{marginBottom:11}}/>
+    <Lbl>Address</Lbl><input value={f.address} onChange={set("address")} placeholder="Optional" style={{marginBottom:11}}/>
+    <div style={{display:"grid",gap:11,gridTemplateColumns:"1fr 1fr",marginBottom:14}}>
+      <div><Lbl>Site contact</Lbl><input value={f.siteContact} onChange={set("siteContact")} placeholder="Name"/></div>
+      <div><Lbl>Site contact phone</Lbl><input type="tel" value={f.sitePhone} onChange={set("sitePhone")} placeholder="(417) 555-0100"/></div>
+    </div>
+    <div style={{display:"flex",gap:9,justifyContent:"flex-end"}}>
+      <Btn kind="ghost" onClick={onCancel}>Cancel</Btn>
+      <Btn disabled={!ok} style={{opacity:ok?1:0.4}} onClick={()=>onCreate({id:uid(),name:f.name.trim(),client:f.client.trim(),address:f.address.trim(),siteContact:f.siteContact.trim(),sitePhone:f.sitePhone.trim(),status:"Active",createdAt:Date.now()})}>Create job</Btn>
+    </div>
+  </div></Modal>);
+}
+
 function NewTaskModal({userName,lockedProject,projects,companies,trades,savePhoto,requestAnnotate,onCancel,onCreate}){
   const [f,setF]=useState({project:lockedProject||projects[0]?.name||"",area:"",description:"",trade:"",priority:"Medium",dueDate:today()});
   const [photos,setPhotos]=useState([]); const fileRef=useRef();
@@ -1556,7 +1549,6 @@ function NewTaskModal({userName,lockedProject,projects,companies,trades,savePhot
   const hFile=async e=>{const file=e.target.files[0];e.target.value="";if(!file)return;const c=await compress(file);requestAnnotate(c,async ann=>setPhotos(p=>[...p,ann]));};
   const create=async()=>{const ids=[];for(const p of photos)ids.push(await savePhoto(p));onCreate({id:uid(),...f,project:f.project.trim(),area:f.area.trim(),trade:f.trade.trim(),status:"Reported",approval:"Pending",photos:ids,comments:[],statusHistory:[],createdBy:userName,createdAt:Date.now(),approvedBy:null,approvedAt:null});};
 
-  // Build trade options: companies from directory first, then any trades on tasks not in directory
   const companyNames = companies.map(c=>c.name);
   const extraTrades  = trades.filter(t=>!companyNames.includes(t));
 
@@ -1633,8 +1625,6 @@ function Annotator({dataUrl,onCancel,onSave}){
   return(<div className="no-print" style={{position:"fixed",inset:0,background:"#111",zIndex:80,display:"flex",flexDirection:"column"}}>
     <div style={{padding:"10px 14px",display:"flex",gap:10,alignItems:"center",flexWrap:"wrap",background:"#1a1918"}}>
       <span style={{...DISP,color:"#fff",fontSize:18,fontWeight:600,marginRight:4}}>Mark Up Photo</span>
-
-      {/* Color swatches */}
       <div style={{display:"flex",gap:5,flexWrap:"wrap",alignItems:"center"}}>
         {COLORS.map(c=>(
           <button key={c.hex} onClick={()=>setColor(c.hex)} title={c.label}
@@ -1643,20 +1633,16 @@ function Annotator({dataUrl,onCancel,onSave}){
               boxShadow:color===c.hex?"0 0 0 2px #555":"none",cursor:"pointer",flexShrink:0}}/>
         ))}
       </div>
-
-      {/* Thickness dropdown */}
       <div style={{display:"flex",alignItems:"center",gap:6}}>
         <span style={{color:"#888",fontSize:12,whiteSpace:"nowrap"}}>Thickness</span>
         <select value={pen} onChange={e=>setPen(Number(e.target.value))}
           style={{background:"#2a2826",color:"#fff",border:"1px solid #555",borderRadius:6,padding:"6px 10px",fontSize:13,cursor:"pointer"}}>
           {THICKNESSES.map(t=><option key={t.value} value={t.value}>{t.label}</option>)}
         </select>
-        {/* Live preview of current color + thickness */}
         <svg width="50" height="28" style={{flexShrink:0}}>
           <line x1="4" y1="14" x2="46" y2="14" stroke={color} strokeWidth={Math.min(pen,20)} strokeLinecap="round"/>
         </svg>
       </div>
-
       <button onClick={()=>{sRef.current.pop();redraw();setT(v=>v+1);}} disabled={!sRef.current.length}
         style={{background:"#2a2826",color:"#fff",padding:"8px 12px",opacity:sRef.current.length?1:0.4,border:"none",borderRadius:8,cursor:"pointer"}}>
         ↩ Undo
@@ -1961,8 +1947,8 @@ function EmailAllModal({job,tasks,emailMap,loadPhoto,onClose}){
   </div></Modal>);
 }
 
-
-function DirectoryModal({companies,teamCode,onSaveTC,onUpsert,onDelete,onImport,onWipe,onClose}){  const [editing,setEditing]=useState(null); const [tc,setTc]=useState(teamCode||""); const [flash,setFlash]=useState(false);
+function DirectoryModal({companies,teamCode,onSaveTC,onUpsert,onDelete,onImport,onWipe,onClose}){
+  const [editing,setEditing]=useState(null); const [tc,setTc]=useState(teamCode||""); const [flash,setFlash]=useState(false);
   const sorted=[...companies].sort((a,b)=>a.name.localeCompare(b.name));
   return(<Modal onClose={onClose} xwide><div style={{padding:18}}>
     <div style={{display:"flex",alignItems:"center",gap:9,marginBottom:10,flexWrap:"wrap"}}>
