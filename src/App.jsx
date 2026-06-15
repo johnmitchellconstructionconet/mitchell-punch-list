@@ -780,12 +780,15 @@ const Lbl=({children})=><label style={{fontSize:12.5,fontWeight:600,color:C.taup
 const Loader=({txt="Loading…"})=><div style={{padding:60,textAlign:"center",color:C.taupe}}>{txt}</div>;
 
 function Modal({children,onClose,wide,xwide}){
+  const backdropRef=useRef();
   return(
-    <div className="no-print"
-      onMouseDown={e=>{if(e.target===e.currentTarget)onClose();}}
-      style={{position:"fixed",inset:0,background:"rgba(30,28,26,0.55)",zIndex:50,display:"flex",alignItems:"flex-start",justifyContent:"center",overflowY:"auto",padding:"22px 8px"}}>
-      <div style={{background:C.paper,borderRadius:14,width:"100%",maxWidth:xwide?1160:wide?980:620,boxShadow:"0 16px 48px rgba(0,0,0,0.26)"}}>
-        {children}
+    <div ref={backdropRef} className="no-print"
+      onMouseDown={e=>{if(e.target===backdropRef.current)onClose();}}
+      style={{position:"fixed",inset:0,zIndex:50,background:"rgba(30,28,26,0.55)"}}>
+      <div style={{position:"absolute",inset:0,overflowY:"auto",display:"flex",alignItems:"flex-start",justifyContent:"center",padding:"22px 8px"}}>
+        <div style={{background:C.paper,borderRadius:14,width:"100%",maxWidth:xwide?1160:wide?980:620,boxShadow:"0 16px 48px rgba(0,0,0,0.26)",flexShrink:0}}>
+          {children}
+        </div>
       </div>
     </div>
   );
