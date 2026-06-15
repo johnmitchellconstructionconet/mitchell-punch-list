@@ -337,21 +337,21 @@ function PubTaskDetail({task,loadPhoto,onLightbox,onClose,onUpdate,trades=[]}){
   const overdue=task.dueDate&&task.dueDate<today()&&task.approval!=="Approved";
   const jobUrl=(()=>{try{return window.location.href;}catch{return "";}})();
   const [tradeName,setTradeName]=useState("");
-  const [tradeComment,setTradeComment]=useState("");
   const [posting,setPosting]=useState(false);
+  const tradeCommentRef=useRef();
 
-  const postComment=async()=>{
-    if(!tradeName.trim()||!tradeComment.trim())return;
+  const postComment=async(text)=>{
+    if(!tradeName.trim()||!text?.trim())return;
     setPosting(true);
-    const newComment={id:uid(),author:tradeName.trim(),role:"trade",text:tradeComment.trim(),ts:Date.now()};
-    const mentions=parseMentions(tradeComment);
+    const newComment={id:uid(),author:tradeName.trim(),role:"trade",text:text.trim(),ts:Date.now()};
+    const mentions=parseMentions(text);
     const existingMentions=task.mentions||[];
     const newMentions=[...new Set([...existingMentions,...mentions])];
     await onUpdate(task.id,{
       comments:[...(task.comments||[]),newComment],
       mentions:newMentions,
     });
-    setTradeComment("");setPosting(false);
+    setPosting(false);
   };
 
   const timeline=[
@@ -444,14 +444,13 @@ function PubTaskDetail({task,loadPhoto,onLightbox,onClose,onUpdate,trades=[]}){
                 placeholder="Your name or company"
                 style={{width:"100%",marginBottom:8,boxSizing:"border-box",padding:"9px 12px",fontSize:14,borderRadius:8,border:`1px solid ${C.line}`}}/>
               <div style={{display:"flex",gap:8,alignItems:"flex-end"}}>
-                <MentionInput
-                  value={tradeComment} onChange={setTradeComment}
-                  onSubmit={postComment}
-                  placeholder={`Message… type @ to mention someone`}
+                <MentionInput ref={tradeCommentRef}
+                  onSubmit={text=>postComment(text)}
+                  placeholder="Message… type @ to mention someone"
                   mentionables={mentionables}
                   style={{fontSize:14}}/>
-                <Btn onClick={postComment} disabled={posting||!tradeName.trim()||!tradeComment.trim()}
-                  style={{opacity:(posting||!tradeName.trim()||!tradeComment.trim())?0.4:1,whiteSpace:"nowrap",alignSelf:"flex-end"}}>
+                <Btn onClick={()=>tradeCommentRef.current?.submit()} disabled={posting||!tradeName.trim()}
+                  style={{opacity:(posting||!tradeName.trim())?0.4:1,whiteSpace:"nowrap",alignSelf:"flex-end"}}>
                   {posting?"Posting…":"Post"}
                 </Btn>
               </div>
@@ -816,22 +815,28 @@ function parseMentions(text){
   return out;
 }
 
-function MentionInput({value,onChange,onSubmit,placeholder,mentionables,submitLabel="Post",style={}}){
+const MentionInput=React.forwardRef(function MentionInput({onSubmit,placeholder,mentionables,style={}},ref){
+  const [localVal,setLocalVal]=useState("");
   const [showDrop,setShowDrop]=useState(false);
   const [dropItems,setDropItems]=useState([]);
   const [atPos,setAtPos]=useState(-1);
   const inputRef=useRef();
 
+  React.useImperativeHandle(ref,()=>({
+    submit:()=>{if(localVal.trim()&&onSubmit){onSubmit(localVal);setLocalVal("");}},
+    clear:()=>setLocalVal(""),
+    get value(){return localVal;},
+  }));
+
   const handleChange=e=>{
     const v=e.target.value;
-    onChange(v);
-    // Detect @ trigger
+    setLocalVal(v);
     const cur=e.target.selectionStart;
     const before=v.slice(0,cur);
     const atIdx=before.lastIndexOf("@");
     if(atIdx>=0&&(atIdx===0||/\s/.test(before[atIdx-1]))){
       const query=before.slice(atIdx+1).toLowerCase();
-      const matches=mentionables.filter(m=>m.toLowerCase().includes(query)).slice(0,8);
+      const matches=(mentionables||[]).filter(m=>m.toLowerCase().includes(query)).slice(0,8);
       setDropItems(matches);
       setAtPos(atIdx);
       setShowDrop(matches.length>0);
@@ -842,10 +847,10 @@ function MentionInput({value,onChange,onSubmit,placeholder,mentionables,submitLa
 
   const insertMention=name=>{
     const cur=inputRef.current.selectionStart;
-    const before=value.slice(0,atPos);
-    const after=value.slice(cur);
+    const before=localVal.slice(0,atPos);
+    const after=localVal.slice(cur);
     const newVal=before+"@"+name+" "+after;
-    onChange(newVal);
+    setLocalVal(newVal);
     setShowDrop(false);
     setTimeout(()=>{
       inputRef.current.focus();
@@ -855,13 +860,16 @@ function MentionInput({value,onChange,onSubmit,placeholder,mentionables,submitLa
   };
 
   const handleKey=e=>{
-    if(e.key==="Enter"&&!e.shiftKey&&!showDrop){e.preventDefault();onSubmit&&onSubmit();}
+    if(e.key==="Enter"&&!e.shiftKey&&!showDrop){
+      e.preventDefault();
+      if(localVal.trim()&&onSubmit){onSubmit(localVal);setLocalVal("");}
+    }
     if(e.key==="Escape") setShowDrop(false);
   };
 
   return(
     <div style={{flex:1,position:"relative"}}>
-      <textarea ref={inputRef} value={value} onChange={handleChange} onKeyDown={handleKey}
+      <textarea ref={inputRef} value={localVal} onChange={handleChange} onKeyDown={handleKey}
         placeholder={placeholder} rows={2}
         style={{width:"100%",resize:"vertical",boxSizing:"border-box",padding:"9px 12px",fontSize:14,borderRadius:8,border:`1px solid ${C.line}`,lineHeight:1.5,...style}}/>
       {showDrop&&(
@@ -878,7 +886,7 @@ function MentionInput({value,onChange,onSubmit,placeholder,mentionables,submitLa
       )}
     </div>
   );
-}
+});
 
 /* highlight @mentions in rendered text */
 function MentionText({text,highlight}){
@@ -1235,13 +1243,13 @@ function TaskDetail({task,userName,loadPhoto,savePhoto,requestAnnotate,onLightbo
   const [editing,setEditing]=useState(false);
   const [editF,setEditF]=useState({area:task.area,description:task.description,trade:task.trade,priority:task.priority,dueDate:task.dueDate||""});
   const startEdit=()=>{setEditF({area:task.area,description:task.description,trade:task.trade,priority:task.priority,dueDate:task.dueDate||""});setEditing(true);};
-  const [comment,setComment]=useState("");
-  const [rejectReason,setRejectReason]=useState("");
   const [showRejectForm,setShowRejectForm]=useState(false);
-  const [rejectPhotos,setRejectPhotos]=useState([]); // staged local data-URLs before saving
+  const [rejectPhotos,setRejectPhotos]=useState([]);
+  const rejectReasonRef=useRef();
   const fileRef=useRef();
   const afterFileRef=useRef();
   const rejectFileRef=useRef();
+  const commentRef=useRef();
   const overdue=task.dueDate&&task.dueDate<today()&&task.status!=="Done";
   const isRejected=task.approval==="Rejected";
   const hasAfterPhotos=(task.afterPhotos||[]).length>0;
@@ -1254,7 +1262,7 @@ function TaskDetail({task,userName,loadPhoto,savePhoto,requestAnnotate,onLightbo
   const tradeInfo=companies?.find(c=>c.name===task.trade);
 
   const addComment=text=>{
-    if(!text.trim())return;
+    if(!text?.trim())return;
     const mentions=parseMentions(text);
     const existingMentions=task.mentions||[];
     const newMentions=[...new Set([...existingMentions,...mentions])];
@@ -1262,7 +1270,6 @@ function TaskDetail({task,userName,loadPhoto,savePhoto,requestAnnotate,onLightbo
       comments:[...(task.comments||[]),{id:uid(),author:userName,role:"internal",text:text.trim(),ts:Date.now()}],
       mentions:newMentions,
     });
-    setComment("");
   };
   const addPhoto=async e=>{const file=e.target.files[0];e.target.value="";if(!file)return;const c=await compress(file);requestAnnotate(c,async ann=>{const pid=await savePhoto(ann);onUpdate({photos:[...(task.photos||[]),pid]});});};
   const addAfterPhoto=async e=>{const file=e.target.files[0];e.target.value="";if(!file)return;const c=await compress(file);requestAnnotate(c,async ann=>{const pid=await savePhoto(ann);onUpdate({afterPhotos:[...(task.afterPhotos||[]),pid],comments:[...(task.comments||[]),{id:uid(),author:userName,role:"internal",text:"After / correction photo added.",ts:Date.now()}]});});};
@@ -1275,6 +1282,7 @@ function TaskDetail({task,userName,loadPhoto,savePhoto,requestAnnotate,onLightbo
   };
 
   const handleReject=async()=>{
+    const rejectReason=rejectReasonRef.current?.value||"";
     if(!rejectReason.trim())return;
     // Save any staged rejection photos first
     const savedIds=[];
@@ -1292,7 +1300,8 @@ function TaskDetail({task,userName,loadPhoto,savePhoto,requestAnnotate,onLightbo
       statusHistory:[...(task.statusHistory||[]),{status:"Rejected",by:userName,ts:Date.now()}],
       comments:[...(task.comments||[]),{id:uid(),author:userName,role:"internal",text:"REJECTED: "+rejectReason.trim(),ts:Date.now()}],
     });
-    setRejectReason("");setRejectPhotos([]);setShowRejectForm(false);
+    if(rejectReasonRef.current) rejectReasonRef.current.value="";
+    setRejectPhotos([]);setShowRejectForm(false);
   };
 
   const handleReApproval=()=>{
@@ -1428,9 +1437,9 @@ function TaskDetail({task,userName,loadPhoto,savePhoto,requestAnnotate,onLightbo
               {/* Reason textarea */}
               <div style={{padding:"12px 14px",borderBottom:`1px solid #F5C6C2`}}>
                 <textarea
+                  ref={rejectReasonRef}
                   rows={4}
-                  value={rejectReason}
-                  onChange={e=>setRejectReason(e.target.value)}
+                  defaultValue=""
                   placeholder="Be specific — e.g. Grout lines uneven in NW corner, lippage exceeds 1/16″. Needs to be re-done."
                   style={{width:"100%",border:`1px solid #E8BFBA`,borderRadius:8,padding:"10px 12px",fontSize:14,resize:"vertical",boxSizing:"border-box",background:"#fff",outline:"none",lineHeight:1.5}}
                 />
@@ -1455,8 +1464,8 @@ function TaskDetail({task,userName,loadPhoto,savePhoto,requestAnnotate,onLightbo
               </div>
               {/* Action buttons */}
               <div style={{padding:"10px 14px",display:"flex",gap:8,justifyContent:"flex-end",background:"#F9E5E3"}}>
-                <Btn kind="ghost" onClick={()=>{setShowRejectForm(false);setRejectReason("");setRejectPhotos([])}}>Cancel</Btn>
-                <Btn kind="red" disabled={!rejectReason.trim()} style={{opacity:rejectReason.trim()?1:0.4}} onClick={handleReject}>
+                <Btn kind="ghost" onClick={()=>{if(rejectReasonRef.current)rejectReasonRef.current.value="";setRejectPhotos([]);setShowRejectForm(false);}}>Cancel</Btn>
+                <Btn kind="red" onClick={handleReject}>
                   ✗ Confirm rejection
                 </Btn>
               </div>
@@ -1513,9 +1522,11 @@ function TaskDetail({task,userName,loadPhoto,savePhoto,requestAnnotate,onLightbo
             ))}
           </div>
           <div style={{display:"flex",gap:8,alignItems:"flex-end"}}>
-            <MentionInput value={comment} onChange={setComment} onSubmit={()=>addComment(comment)}
-              placeholder="Add a note… type @ to mention someone" mentionables={mentionables}/>
-            <Btn kind="ghost" onClick={()=>addComment(comment)} style={{alignSelf:"flex-end"}}>Post</Btn>
+            <MentionInput ref={commentRef}
+              onSubmit={text=>addComment(text)}
+              placeholder="Add a note… type @ to mention someone"
+              mentionables={mentionables}/>
+            <Btn kind="ghost" style={{alignSelf:"flex-end"}} onClick={()=>commentRef.current?.submit()}>Post</Btn>
           </div>
         </Section>
 
