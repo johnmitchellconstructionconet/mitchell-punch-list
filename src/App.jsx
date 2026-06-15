@@ -1283,6 +1283,85 @@ function RejectReasonInput({id}){
   );
 }
 
+/* ── RejectionPanel ─────────────────────────────────────────────
+   Fully self-contained. Owns its own state. Never shares state
+   with TaskDetail so parent re-renders cannot affect its inputs.
+   ────────────────────────────────────────────────────────────── */
+function RejectionPanel({onConfirm,onCancel,savePhoto,requestAnnotate}){
+  const reasonRef=useRef();
+  const fileRef=useRef();
+  const [photos,setPhotos]=useState([]);
+  const [saving,setSaving]=useState(false);
+
+  const addPhoto=async e=>{
+    const file=e.target.files[0]; e.target.value=""; if(!file)return;
+    const c=await compress(file);
+    requestAnnotate(c,ann=>setPhotos(p=>[...p,ann]));
+  };
+
+  const confirm=async()=>{
+    const reason=(reasonRef.current?.value||"").trim();
+    if(!reason)return;
+    setSaving(true);
+    const savedIds=[];
+    for(const dataUrl of photos){
+      const pid=await savePhoto(dataUrl);
+      savedIds.push(pid);
+    }
+    onConfirm(reason,savedIds);
+    setSaving(false);
+  };
+
+  return(
+    <div style={{marginTop:14,borderRadius:10,overflow:"hidden",border:`1.5px solid ${C.rust}`}}>
+      {/* Header */}
+      <div style={{padding:"10px 14px",background:"#F9E5E3",borderBottom:`1px solid #F5C6C2`}}>
+        <div style={{...CAPT,fontSize:10,fontWeight:700,color:C.rust}}>Rejection details</div>
+      </div>
+
+      {/* Reason */}
+      <div style={{padding:"12px 14px",background:"#FDF0EF",borderBottom:`1px solid #F5C6C2`}}>
+        <div style={{...CAPT,fontSize:10,color:C.rust,fontWeight:600,marginBottom:6}}>Reason — what needs to be fixed</div>
+        <textarea
+          ref={reasonRef}
+          rows={4}
+          placeholder="Be specific — e.g. Grout lines uneven in NW corner, lippage exceeds 1/16″. Needs to be re-done."
+          style={{width:"100%",boxSizing:"border-box",border:`1px solid #E8BFBA`,borderRadius:8,padding:"10px 12px",fontSize:14,resize:"vertical",lineHeight:1.5,background:"#fff",fontFamily:"inherit"}}
+        />
+      </div>
+
+      {/* Photos */}
+      <div style={{padding:"12px 14px",background:"#FDF0EF",borderBottom:`1px solid #F5C6C2`}}>
+        <div style={{...CAPT,fontSize:10,color:C.rust,fontWeight:600,marginBottom:8}}>Reference photos (optional) — tap to annotate before adding</div>
+        <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
+          {photos.map((src,i)=>(
+            <div key={i} style={{position:"relative",flexShrink:0}}>
+              <img src={src} alt="" style={{width:88,height:88,objectFit:"cover",borderRadius:8,border:`2px solid #F5C6C2`,display:"block"}}/>
+              <button
+                onClick={()=>setPhotos(p=>p.filter((_,j)=>j!==i))}
+                style={{position:"absolute",top:-6,right:-6,width:20,height:20,borderRadius:"50%",background:C.rust,color:"#fff",border:"none",fontSize:12,cursor:"pointer",lineHeight:"20px",textAlign:"center",padding:0}}>×</button>
+            </div>
+          ))}
+          <button
+            onClick={()=>fileRef.current.click()}
+            style={{width:88,height:88,borderRadius:8,border:`2px dashed #E8BFBA`,background:"#fff",color:C.rust,fontSize:12,cursor:"pointer",fontWeight:600,lineHeight:1.4}}>
+            📷<br/>Add photo
+          </button>
+          <input ref={fileRef} type="file" accept="image/*" capture="environment" onChange={addPhoto} style={{display:"none"}}/>
+        </div>
+      </div>
+
+      {/* Actions */}
+      <div style={{padding:"10px 14px",display:"flex",gap:8,justifyContent:"flex-end",background:"#F9E5E3"}}>
+        <Btn kind="ghost" onClick={onCancel}>Cancel</Btn>
+        <Btn kind="red" onClick={confirm} disabled={saving} style={{opacity:saving?0.6:1}}>
+          {saving?"Saving…":"✗ Confirm rejection"}
+        </Btn>
+      </div>
+    </div>
+  );
+}
+
 function TaskSection({title,children,noBorder,sectionAccent}){
   return(
     <div>
@@ -1298,11 +1377,9 @@ function TaskDetail({task,userName,loadPhoto,savePhoto,requestAnnotate,onLightbo
   const [editing,setEditing]=useState(false);
   const [editF,setEditF]=useState({area:task.area,description:task.description,trade:task.trade,priority:task.priority,dueDate:task.dueDate||""});
   const startEdit=()=>{setEditF({area:task.area,description:task.description,trade:task.trade,priority:task.priority,dueDate:task.dueDate||""});setEditing(true);};
-  const [showRejectForm,setShowRejectForm]=useState(false);
-  const [rejectPhotos,setRejectPhotos]=useState([]);
+  const [showReject,setShowReject]=useState(false);
   const fileRef=useRef();
   const afterFileRef=useRef();
-  const rejectFileRef=useRef();
   const overdue=task.dueDate&&task.dueDate<today()&&task.status!=="Done";
   const isRejected=task.approval==="Rejected";
   const hasAfterPhotos=(task.afterPhotos||[]).length>0;
@@ -1314,49 +1391,11 @@ function TaskDetail({task,userName,loadPhoto,savePhoto,requestAnnotate,onLightbo
   ].filter((v,i,a)=>a.indexOf(v)===i);
   const tradeInfo=companies?.find(c=>c.name===task.trade);
 
-  const addComment=text=>{
-    if(!text?.trim())return;
-    const mentions=parseMentions(text);
-    const existingMentions=task.mentions||[];
-    const newMentions=[...new Set([...existingMentions,...mentions])];
-    onUpdate({
-      comments:[...(task.comments||[]),{id:uid(),author:userName,role:"internal",text:text.trim(),ts:Date.now()}],
-      mentions:newMentions,
-    });
-  };
   const addPhoto=async e=>{const file=e.target.files[0];e.target.value="";if(!file)return;const c=await compress(file);requestAnnotate(c,async ann=>{const pid=await savePhoto(ann);onUpdate({photos:[...(task.photos||[]),pid]});});};
   const addAfterPhoto=async e=>{const file=e.target.files[0];e.target.value="";if(!file)return;const c=await compress(file);requestAnnotate(c,async ann=>{const pid=await savePhoto(ann);onUpdate({afterPhotos:[...(task.afterPhotos||[]),pid],comments:[...(task.comments||[]),{id:uid(),author:userName,role:"internal",text:"After / correction photo added.",ts:Date.now()}]});});};
   const saveEdit=()=>{onUpdate({area:editF.area.trim(),description:editF.description.trim(),trade:editF.trade.trim(),priority:editF.priority,dueDate:editF.dueDate});setEditing(false);};
 
-  const addRejectPhoto=async e=>{
-    const file=e.target.files[0];e.target.value="";if(!file)return;
-    const c=await compress(file);
-    requestAnnotate(c,ann=>setRejectPhotos(p=>[...p,ann]));
-  };
 
-  const handleReject=async()=>{
-    const rejectReason=(document.getElementById("reject-reason")?.value||"").trim();
-    if(!rejectReason)return;
-    // Save any staged rejection photos first
-    const savedIds=[];
-    for(const dataUrl of rejectPhotos){
-      const pid=await savePhoto(dataUrl);
-      savedIds.push(pid);
-    }
-    onUpdate({
-      approval:"Rejected",status:"Reported",
-      approvedBy:null,approvedAt:null,
-      rejectionReason:rejectReason.trim(),
-      rejectionCount:(task.rejectionCount||0)+1,
-      // Rejection photos go into afterPhotos as reference shots of the problem
-      afterPhotos:[...(task.afterPhotos||[]),...savedIds],
-      statusHistory:[...(task.statusHistory||[]),{status:"Rejected",by:userName,ts:Date.now()}],
-      comments:[...(task.comments||[]),{id:uid(),author:userName,role:"internal",text:"REJECTED: "+rejectReason.trim(),ts:Date.now()}],
-    });
-    const rta=document.getElementById("reject-reason");
-    if(rta) rta.value="";
-    setRejectPhotos([]);setShowRejectForm(false);
-  };
 
   const handleReApproval=()=>{
     if(!(task.afterPhotos||[]).length){if(!window.confirm("No after photo added yet. Submit for re-approval anyway?"))return;}
@@ -1470,48 +1509,30 @@ function TaskDetail({task,userName,loadPhoto,savePhoto,requestAnnotate,onLightbo
           <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
             <span style={{...CAPT,fontSize:10,color:C.taupe,fontWeight:600}}>Approval:</span>
             <Btn kind="green" style={{padding:"7px 13px",fontSize:13}} onClick={()=>onUpdate({approval:"Approved",status:"Done",approvedBy:userName,approvedAt:Date.now(),statusHistory:[...(task.statusHistory||[]),{status:"Approved",by:userName,ts:Date.now()}]})}>✓ Approve</Btn>
-            <Btn kind="red" style={{padding:"7px 13px",fontSize:13}} onClick={()=>setShowRejectForm(v=>!v)}>✗ Reject</Btn>
+            <Btn kind="red" style={{padding:"7px 13px",fontSize:13}} onClick={()=>setShowReject(v=>!v)}>✗ Reject</Btn>
             {task.approval==="Approved"&&<Btn kind="ghost" style={{padding:"7px 13px",fontSize:13}} onClick={()=>onUpdate({approval:"Pending",status:"Reported",approvedBy:null,approvedAt:null})}>Clear</Btn>}
             {isRejected&&<Btn kind="dark" style={{padding:"7px 13px",fontSize:13,background:C.sage}} onClick={handleReApproval}>↺ Re-submit for approval</Btn>}
             <div style={{flex:1}}/>
             <Btn kind="ghost" style={{color:C.rust,fontSize:13,padding:"7px 13px"}} onClick={()=>window.confirm("Delete this task?")&&onDelete()}>Delete</Btn>
           </div>
-          {showRejectForm&&(
-            <div style={{marginTop:14,background:"#FDF0EF",border:`1.5px solid ${C.rust}`,borderRadius:10,overflow:"hidden"}}>
-              {/* Form header */}
-              <div style={{padding:"10px 14px",borderBottom:`1px solid #F5C6C2`,background:"#F9E5E3"}}>
-                <div style={{...CAPT,fontSize:10,fontWeight:700,color:C.rust}}>Rejection — describe what needs to be fixed</div>
-              </div>
-              {/* Reason textarea */}
-              <div style={{padding:"12px 14px",borderBottom:`1px solid #F5C6C2`}}>
-                <RejectReasonInput id="reject-reason"/>
-              </div>
-              {/* Photo upload area */}
-              <div style={{padding:"12px 14px",borderBottom:`1px solid #F5C6C2`}}>
-                <div style={{...CAPT,fontSize:10,fontWeight:700,color:C.rust,marginBottom:8}}>Reference photos (optional) — annotate to mark the problem</div>
-                <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
-                  {rejectPhotos.map((src,i)=>(
-                    <div key={i} style={{position:"relative"}}>
-                      <img src={src} alt="" style={{width:90,height:90,objectFit:"cover",borderRadius:8,border:`2px solid ${C.rust}40`}}/>
-                      <button onClick={()=>setRejectPhotos(p=>p.filter((_,j)=>j!==i))}
-                        style={{position:"absolute",top:-6,right:-6,width:20,height:20,borderRadius:"50%",background:C.rust,color:"#fff",border:"none",fontSize:12,lineHeight:"20px",cursor:"pointer",textAlign:"center",padding:0}}>×</button>
-                    </div>
-                  ))}
-                  <button onClick={()=>rejectFileRef.current.click()}
-                    style={{width:90,height:90,borderRadius:8,border:`2px dashed ${C.rust}60`,background:"#fff",color:C.rust,fontSize:12,cursor:"pointer",fontWeight:600,lineHeight:1.3,padding:4}}>
-                    📷<br/>Add photo
-                  </button>
-                  <input ref={rejectFileRef} type="file" accept="image/*" capture="environment" onChange={addRejectPhoto} style={{display:"none"}}/>
-                </div>
-              </div>
-              {/* Action buttons */}
-              <div style={{padding:"10px 14px",display:"flex",gap:8,justifyContent:"flex-end",background:"#F9E5E3"}}>
-                <Btn kind="ghost" onClick={()=>{const rta=document.getElementById("reject-reason");if(rta)rta.value="";setRejectPhotos([]);setShowRejectForm(false);}}>Cancel</Btn>
-                <Btn kind="red" onClick={handleReject}>
-                  ✗ Confirm rejection
-                </Btn>
-              </div>
-            </div>
+          {showReject&&(
+            <RejectionPanel
+              savePhoto={savePhoto}
+              requestAnnotate={requestAnnotate}
+              onCancel={()=>setShowReject(false)}
+              onConfirm={(reason,photoIds)=>{
+                onUpdate({
+                  approval:"Rejected",status:"Reported",
+                  approvedBy:null,approvedAt:null,
+                  rejectionReason:reason,
+                  rejectionCount:(task.rejectionCount||0)+1,
+                  afterPhotos:[...(task.afterPhotos||[]),...photoIds],
+                  statusHistory:[...(task.statusHistory||[]),{status:"Rejected",by:userName,ts:Date.now()}],
+                  comments:[...(task.comments||[]),{id:uid(),author:userName,role:"internal",text:"REJECTED: "+reason,ts:Date.now()}],
+                });
+                setShowReject(false);
+              }}
+            />
           )}
         </TaskSection>
 
@@ -1549,15 +1570,6 @@ function TaskDetail({task,userName,loadPhoto,savePhoto,requestAnnotate,onLightbo
           </TaskSection>
         )}
 
-        {/* Notes & Comments */}
-        <TaskSection title="Notes & Comments">
-          <CommentBox
-            comments={task.comments||[]}
-            userName={userName}
-            accent={accent}
-            onAdd={addComment}
-          />
-        </TaskSection>
 
         {/* Activity Timeline */}
         <TaskSection title="Activity Timeline" noBorder>
@@ -2296,9 +2308,35 @@ function Report({tasks,jobLabel,filters,userName,loadPhoto,onBack,project}){
   const groups={};for(const t of tasks){groups[t.project]=groups[t.project]||{};(groups[t.project][t.area]=groups[t.project][t.area]||[]).push(t);}
   const open=tasks.filter(t=>t.status!=="Approved").length; const done=tasks.length-open;
   const doExport=async()=>{setExporting(true);try{
-    const pm={};for(const t of tasks){const pid=t.photos?.[0];if(pid&&!pm[pid])pm[pid]=await loadPhoto(pid);}
+    const pm={};
+    for(const t of tasks){
+      for(const pid of [...(t.photos||[]),...(t.afterPhotos||[])].slice(0,3)){
+        if(pid&&!pm[pid])pm[pid]=await loadPhoto(pid);
+      }
+    }
     const sm=s=>{const m=STATUS_META[s]||STATUS_META.Reported;return`background:${m.bg};color:${m.fg};padding:2px 8px;border-radius:5px;font-weight:700;font-size:11px;text-transform:uppercase`;};
-    let body="";for(const [proj,areas] of Object.entries(groups)){body+=`<h2>${esc(proj)}</h2>`;for(const [area,list] of Object.entries(areas)){body+=`<h3>${esc(area)}</h3><table><thead><tr><th>Photo</th><th>Description</th><th>Trade</th><th>Priority</th><th>Due</th><th>Progress</th><th>Approval</th><th>Approved by</th></tr></thead><tbody>`;for(const t of list){const img=t.photos?.[0]&&pm[t.photos[0]]?`<img src="${pm[t.photos[0]]}" style="width:50px;height:50px;object-fit:cover;border-radius:5px">`:"—";const appr=t.approval==="Approved"?`${fmtDate(new Date(t.approvedAt).toISOString())} — ${esc(t.approvedBy)}`:"—";const am={Approved:{bg:"#E0EDDB",fg:"#5A8A4F"},Rejected:{bg:"#F2DEDA",fg:"#A83B2E"},Pending:{bg:"#F0EDE8",fg:"#9A7B4F"}}[t.approval||"Pending"]||{bg:"#F0EDE8",fg:"#9A7B4F"};body+=`<tr><td>${img}</td><td>${esc(t.description)}</td><td>${esc(t.trade)}</td><td style="color:${PRI_FG[t.priority]};font-weight:600">${t.priority}</td><td>${fmtDate(t.dueDate)}</td><td><span style="${sm(t.status)}">${t.status}</span></td><td><span style="background:${am.bg};color:${am.fg};padding:2px 8px;border-radius:5px;font-weight:700;font-size:11px">${t.approval||"Pending"}</span></td><td>${appr}</td></tr>`;}body+=`</tbody></table>`;}}
+    let body="";
+    for(const [proj,areas] of Object.entries(groups)){
+      body+=`<h2>${esc(proj)}</h2>`;
+      for(const [area,list] of Object.entries(areas)){
+        body+=`<h3>${esc(area)}</h3><table><thead><tr><th>Photo</th><th>Description</th><th>Trade</th><th>Priority</th><th>Due</th><th>Progress</th><th>Approval</th><th>Approved by</th></tr></thead><tbody>`;
+        for(const t of list){
+          const img=t.photos?.[0]&&pm[t.photos[0]]?`<img src="${pm[t.photos[0]]}" style="width:50px;height:50px;object-fit:cover;border-radius:5px">`:"—";
+          const appr=t.approval==="Approved"?`${fmtDate(new Date(t.approvedAt).toISOString().slice(0,10))} — ${esc(t.approvedBy)}`:"—";
+          const am={Approved:{bg:"#E0EDDB",fg:"#5A8A4F"},Rejected:{bg:"#F2DEDA",fg:"#A83B2E"},Pending:{bg:"#F0EDE8",fg:"#9A7B4F"}}[t.approval||"Pending"]||{bg:"#F0EDE8",fg:"#9A7B4F"};
+          body+=`<tr><td>${img}</td><td>${esc(t.description)}</td><td>${esc(t.trade)}</td><td style="color:${PRI_FG[t.priority]};font-weight:600">${t.priority}</td><td>${fmtDate(t.dueDate)}</td><td><span style="${sm(t.status)}">${t.status}</span></td><td><span style="background:${am.bg};color:${am.fg};padding:2px 8px;border-radius:5px;font-weight:700;font-size:11px">${t.approval||"Pending"}</span></td><td>${appr}</td></tr>`;
+          // Rejection details row
+          if(t.approval==="Rejected"&&(t.rejectionReason||(t.afterPhotos||[]).length>0)){
+            const afterImgs=(t.afterPhotos||[]).slice(0,3).map(pid=>pm[pid]?`<img src="${pm[pid]}" style="width:48px;height:48px;object-fit:cover;border-radius:5px;margin-right:4px">`:"").join("");
+            body+=`<tr><td colspan="8" style="background:#FDF0EF;padding:8px 10px;border-left:3px solid #B04035">`;
+            if(t.rejectionReason) body+=`<div style="color:#B04035;font-weight:700;font-size:12px;margin-bottom:${afterImgs?"6px":"0"}">✗ Rejection reason: ${esc(t.rejectionReason)}</div>`;
+            if(afterImgs) body+=`<div style="font-size:11px;color:#8A8279;margin-bottom:4px;font-weight:600;text-transform:uppercase;letter-spacing:0.06em">Reference photos</div><div>${afterImgs}</div>`;
+            body+=`</td></tr>`;
+          }
+        }
+        body+=`</tbody></table>`;
+      }
+    }
     const logoHtml=co.logoUrl?`<img src="${co.logoUrl}" style="height:48px;max-width:200px;object-fit:contain;display:block;margin-bottom:4px" alt="">`:`<div style="font-family:'Cormorant Garamond',Georgia,serif;font-size:28px;color:#7B756E;font-style:italic">${esc(co.name||"")}</div>`;
     const html=`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Punch List — ${esc(jobLabel)}</title><style>@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Raleway:wght@300;400;500;600;700&display=swap');body{font-family:Raleway,sans-serif;color:#2E2B28;max-width:860px;margin:0 auto;padding:32px 24px}.hdr{display:flex;justify-content:space-between;border-bottom:3px solid #2E2B28;padding-bottom:12px}h1{font-family:'Cormorant Garamond',Georgia,serif;font-size:30px;font-weight:600;margin:6px 0 2px}h2{font-family:'Cormorant Garamond',Georgia,serif;font-size:20px;font-weight:600;border-bottom:2px solid #DDD9D3;padding-bottom:3px;margin:24px 0 5px}h3{font-size:11px;text-transform:uppercase;letter-spacing:0.1em;color:#7B756E;margin:12px 0 3px}table{width:100%;border-collapse:collapse;font-size:13px}th{text-align:left;color:#7B756E;border-bottom:1px solid #B2A98B;padding:5px 6px;font-size:11px;text-transform:uppercase}td{border-bottom:1px solid #E8E4DE;padding:5px 6px;vertical-align:top}.meta{text-align:right;font-size:12px;color:#555}.foot{margin-top:36px;font-size:11px;color:#9A9590;border-top:1px solid #DDD9D3;padding-top:8px}@media print{body{padding:0}}</style></head><body><div class="hdr"><div>${logoHtml}<h1>Punch List Report</h1><div style="font-size:12px;letter-spacing:0.08em;text-transform:uppercase;font-weight:600;color:#7B756E;margin-top:3px">${esc(jobLabel)}</div>${project&&project.siteContact?`<div style="font-size:12px;color:#8A8279;margin-top:3px">Site: ${esc(project.siteContact)}${project.sitePhone?" · "+esc(project.sitePhone):""}</div>`:""}</div><div class="meta"><div>Generated ${fmtDate(today())} by ${esc(userName)}</div><div style="font-weight:700;margin-top:3px">${open} open · ${done} approved · ${tasks.length} total</div></div></div>${body}<div class="foot">${esc(co.name)}${[co.address,co.city,co.state].filter(Boolean).length>0?" · "+[co.address,co.city,co.state].filter(Boolean).map(esc).join(", "):""}${co.phone?" · "+esc(co.phone):""}<div style="font-family:'Cormorant Garamond',Georgia,serif;font-style:italic;color:${co.accentColor||"#BBA270"};font-size:13px;margin-top:2px">"${esc(co.tagline||"")}"</div></div></body></html>`;
     printHTML(html);
