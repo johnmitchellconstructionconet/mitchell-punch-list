@@ -901,6 +901,108 @@ function ApprovalChip({approval,big}){
 const Lbl=({children})=><label style={{fontSize:12.5,fontWeight:600,color:C.taupe,display:"block",marginBottom:5}}>{children}</label>;
 const Loader=({txt="Loading…"})=><div style={{padding:60,textAlign:"center",color:C.taupe}}>{txt}</div>;
 
+/* ── Spinner ──────────────────────────────────────────────────── */
+function Spinner(){
+  return(
+    <span style={{display:"inline-block",width:14,height:14,border:`2px solid rgba(255,255,255,0.3)`,borderTopColor:"#fff",borderRadius:"50%",animation:"spin 0.7s linear infinite",flexShrink:0}}>
+      <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
+    </span>
+  );
+}
+
+/* ── TradeCombobox — searchable multi-trade selector ─────────── */
+function TradeCombobox({value=[], onChange, allTrades=[], companies=[], placeholder="Search trades…"}){
+  const co=useCompany();
+  const accent=co?.accentColor||C.gold;
+  const [query,setQuery]=useState("");
+  const [open,setOpen]=useState(false);
+  const inputRef=useRef();
+  const dropRef=useRef();
+
+  // value is always an array of trade name strings
+  const selected = Array.isArray(value) ? value : (value ? [value] : []);
+
+  const filtered = allTrades.filter(t=>
+    t.toLowerCase().includes(query.toLowerCase()) && !selected.includes(t)
+  ).slice(0,10);
+
+  const add = (trade) => {
+    onChange([...selected, trade]);
+    setQuery("");
+    inputRef.current?.focus();
+  };
+
+  const remove = (trade) => {
+    onChange(selected.filter(t=>t!==trade));
+  };
+
+  // Close on outside click
+  useEffect(()=>{
+    const handler = e => {
+      if(dropRef.current && !dropRef.current.contains(e.target)) setOpen(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return ()=>document.removeEventListener("mousedown", handler);
+  },[]);
+
+  return(
+    <div ref={dropRef} style={{position:"relative"}}>
+      {/* Selected trade chips */}
+      {selected.length>0&&(
+        <div style={{display:"flex",gap:5,flexWrap:"wrap",marginBottom:6}}>
+          {selected.map(t=>{
+            const co=companies?.find(c=>c.name===t);
+            return(
+              <div key={t} style={{display:"inline-flex",alignItems:"center",gap:4,background:accent+"22",border:`1px solid ${accent}`,borderRadius:6,padding:"3px 8px",fontSize:13,fontWeight:600,color:C.ink}}>
+                <span>{t}</span>
+                {co?.tradeType&&<span style={{fontSize:11,color:C.taupe,fontWeight:400}}>· {co.tradeType}</span>}
+                <button onClick={()=>remove(t)} style={{background:"none",border:"none",cursor:"pointer",color:C.taupe,fontSize:14,lineHeight:1,padding:"0 0 0 2px",fontWeight:700}}>×</button>
+              </div>
+            );
+          })}
+        </div>
+      )}
+      {/* Search input */}
+      <input
+        ref={inputRef}
+        value={query}
+        onChange={e=>{setQuery(e.target.value);setOpen(true);}}
+        onFocus={()=>setOpen(true)}
+        onKeyDown={e=>{
+          if(e.key==="Escape") setOpen(false);
+          if(e.key==="Enter"&&filtered.length>0){e.preventDefault();add(filtered[0]);}
+        }}
+        placeholder={selected.length>0?"Add another trade…":placeholder}
+        style={{width:"100%",padding:"10px 12px",fontSize:14,borderRadius:8,border:`1px solid ${open?accent:C.line}`,outline:"none",boxSizing:"border-box"}}
+      />
+      {/* Dropdown */}
+      {open&&(query.length>0||allTrades.length>0)&&(
+        <div style={{position:"absolute",top:"calc(100% + 4px)",left:0,right:0,background:"#fff",border:`1px solid ${C.line}`,borderRadius:10,boxShadow:"0 8px 24px rgba(0,0,0,0.12)",zIndex:200,maxHeight:220,overflowY:"auto"}}>
+          {filtered.length===0&&query.length>0&&(
+            <div style={{padding:"10px 14px",fontSize:13,color:C.taupe}}>No matching trades — check the Trade Directory.</div>
+          )}
+          {filtered.length===0&&query.length===0&&(
+            <div style={{padding:"10px 14px",fontSize:13,color:C.taupe}}>Start typing to search trades…</div>
+          )}
+          {filtered.map((t,i)=>{
+            const co=companies?.find(c=>c.name===t);
+            return(
+              <div key={t}
+                onMouseDown={e=>{e.preventDefault();add(t);}}
+                style={{padding:"10px 14px",fontSize:14,cursor:"pointer",borderBottom:i<filtered.length-1?`1px solid ${C.line}`:"none",display:"flex",justifyContent:"space-between",alignItems:"center"}}
+                onMouseEnter={e=>e.currentTarget.style.background=C.mist}
+                onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+                <span style={{fontWeight:600}}>{t}</span>
+                {co?.tradeType&&<span style={{fontSize:12,color:C.taupe}}>{co.tradeType}</span>}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ── Mention helpers ─────────────────────────────────────────── */
 function parseMentions(text){
   const re=/@([\w\s.'-]+?)(?=\s|$|[^a-zA-Z0-9\s.'-])/g;
@@ -1494,8 +1596,9 @@ function TaskDetail({taskId,tasks:allTasks,userName,loadPhoto,savePhoto,requestA
   const co=useCompany();
   const accent=co?.accentColor||C.gold;
   const [editing,setEditing]=useState(false);
-  const [editF,setEditF]=useState({area:task.area,description:task.description,trade:task.trade,priority:task.priority,dueDate:task.dueDate||""});
-  const startEdit=()=>{setEditF({area:task.area,description:task.description,trade:task.trade,priority:task.priority,dueDate:task.dueDate||""});setEditing(true);};
+  const toTradesArray = t => Array.isArray(t) ? t : (t ? t.split(",").map(x=>x.trim()).filter(Boolean) : []);
+  const [editF,setEditF]=useState({area:task.area,description:task.description,trades:toTradesArray(task.trades||task.trade),priority:task.priority,dueDate:task.dueDate||""});
+  const startEdit=()=>{setEditF({area:task.area,description:task.description,trades:toTradesArray(task.trades||task.trade),priority:task.priority,dueDate:task.dueDate||""});setEditing(true);};
   const fileRef=useRef();
   const rejFileRef=useRef();
   const overdue=task.dueDate&&task.dueDate<today()&&task.status!=="Done";
@@ -1556,7 +1659,20 @@ function TaskDetail({taskId,tasks:allTasks,userName,loadPhoto,savePhoto,requestA
   const taskProject=projects?.find(p=>p.name===task.project);
 
   const addPhoto=async e=>{const file=e.target.files[0];e.target.value="";if(!file)return;const c=await compress(file);requestAnnotate(c,async ann=>{const pid=await savePhoto(ann);onUpdate({photos:[...(task.photos||[]),pid]});});};
-  const saveEdit=()=>{onUpdate({area:editF.area.trim(),description:editF.description.trim(),trade:editF.trade.trim(),priority:editF.priority,dueDate:editF.dueDate});setEditing(false);};
+  const [editSaving,setEditSaving]=useState(false);
+  const saveEdit=async()=>{
+    setEditSaving(true);
+    await onUpdate({
+      area:editF.area.trim(),
+      description:editF.description.trim(),
+      trade:editF.trades.join(", "),
+      trades:editF.trades,
+      priority:editF.priority,
+      dueDate:editF.dueDate,
+    });
+    setEditSaving(false);
+    setEditing(false);
+  };
 
   const timeline=[
     {ts:task.createdAt,label:"Task reported",by:task.createdBy||"Team",color:C.taupe},
@@ -1614,12 +1730,14 @@ function TaskDetail({taskId,tasks:allTasks,userName,loadPhoto,savePhoto,requestA
           <div style={{padding:"14px 18px",background:"#FFFEF9",borderBottom:`1px solid ${C.line}`}}>
             <div style={{display:"grid",gap:11,gridTemplateColumns:"1fr 1fr"}}>
               <div><Lbl>Room / area</Lbl><input value={editF.area} onChange={e=>setEditF(f=>({...f,area:e.target.value}))}/></div>
-              <div><Lbl>Assigned trade</Lbl>
-                <select value={editF.trade} onChange={e=>setEditF(f=>({...f,trade:e.target.value}))}>
-                  <option value="">— Select —</option>
-                  {(trades||[]).filter(t=>companies?.find(c=>c.name===t)).length>0&&<optgroup label="Trade Directory">{(trades||[]).filter(t=>companies?.find(c=>c.name===t)).map(t=><option key={t} value={t}>{t}</option>)}</optgroup>}
-                  {(trades||[]).filter(t=>!companies?.find(c=>c.name===t)).length>0&&<optgroup label="Other">{(trades||[]).filter(t=>!companies?.find(c=>c.name===t)).map(t=><option key={t} value={t}>{t}</option>)}</optgroup>}
-                </select>
+              <div>
+                <Lbl>Assigned trade(s)</Lbl>
+                <TradeCombobox
+                  value={editF.trades}
+                  onChange={v=>setEditF(f=>({...f,trades:v}))}
+                  allTrades={[...new Set([...(companies||[]).map(c=>c.name),...(trades||[])])].sort()}
+                  companies={companies||[]}
+                />
               </div>
               <div style={{gridColumn:"1/-1"}}><Lbl>Description</Lbl><textarea rows={2} value={editF.description} onChange={e=>setEditF(f=>({...f,description:e.target.value}))}/></div>
               <div><Lbl>Priority</Lbl><select value={editF.priority} onChange={e=>setEditF(f=>({...f,priority:e.target.value}))}>{PRIORITIES.map(p=><option key={p}>{p}</option>)}</select></div>
@@ -1627,7 +1745,9 @@ function TaskDetail({taskId,tasks:allTasks,userName,loadPhoto,savePhoto,requestA
             </div>
             <div style={{display:"flex",gap:9,marginTop:11,justifyContent:"flex-end"}}>
               <Btn kind="ghost" onClick={()=>setEditing(false)}>Cancel</Btn>
-              <Btn onClick={saveEdit} disabled={!editF.area.trim()||!editF.description.trim()||!editF.trade.trim()}>Save changes</Btn>
+              <Btn onClick={saveEdit} disabled={editSaving||!editF.area.trim()||!editF.description.trim()||!editF.trades.length} style={{opacity:editSaving||!editF.area.trim()||!editF.description.trim()||!editF.trade.length?0.5:1}}>
+                {editSaving?<span style={{display:"flex",alignItems:"center",gap:6}}><Spinner/>Saving…</span>:"Save changes"}
+              </Btn>
             </div>
           </div>
         )}
@@ -1635,17 +1755,28 @@ function TaskDetail({taskId,tasks:allTasks,userName,loadPhoto,savePhoto,requestA
         {/* Task Details */}
         <TaskSection title="Task Details">
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"10px 16px"}}>
-            {/* Assignee with call button */}
-            <div>
-              <div style={{...CAPT,fontSize:9.5,color:C.stone,marginBottom:3}}>Assignee</div>
-              <div style={{fontWeight:700}}>{task.trade||"—"}</div>
-              {tradeInfo?.contactName&&<div style={{fontSize:12,color:C.taupe}}>{tradeInfo.contactName}</div>}
-              {tradeInfo?.phone&&(
-                <a href={`tel:${tradeInfo.phone.replace(/\D/g,"")}`}
-                  style={{display:"inline-flex",alignItems:"center",gap:5,marginTop:4,padding:"5px 10px",background:C.mist,border:`1px solid ${C.line}`,borderRadius:20,textDecoration:"none",color:C.ink,fontSize:12,fontWeight:600}}>
-                  <span style={{fontSize:13}}>📞</span>{tradeInfo.phone}
-                </a>
-              )}
+            {/* Assignee(s) with call buttons */}
+            <div style={{gridColumn:"1/-1"}}>
+              <div style={{...CAPT,fontSize:9.5,color:C.stone,marginBottom:6}}>Assignee{(toTradesArray(task.trades||task.trade)).length>1?"s":""}</div>
+              <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+                {(toTradesArray(task.trades||task.trade)).map(t=>{
+                  const ti=companies?.find(c=>c.name===t);
+                  return(
+                    <div key={t} style={{background:C.mist,border:`1px solid ${C.line}`,borderRadius:9,padding:"8px 12px",minWidth:160}}>
+                      <div style={{fontWeight:700,fontSize:13}}>{t}</div>
+                      {ti?.contactName&&<div style={{fontSize:11.5,color:C.taupe,marginTop:1}}>{ti.contactName}</div>}
+                      {ti?.tradeType&&<div style={{fontSize:11,color:C.stone}}>{ti.tradeType}</div>}
+                      {ti?.phone&&(
+                        <a href={`tel:${ti.phone.replace(/\D/g,"")}`}
+                          style={{display:"inline-flex",alignItems:"center",gap:4,marginTop:5,padding:"4px 9px",background:"#fff",border:`1px solid ${C.line}`,borderRadius:16,textDecoration:"none",color:C.ink,fontSize:12,fontWeight:600}}>
+                          <span style={{fontSize:12}}>📞</span>{ti.phone}
+                        </a>
+                      )}
+                    </div>
+                  );
+                })}
+                {(toTradesArray(task.trades||task.trade)).length===0&&<div style={{color:C.taupe}}>—</div>}
+              </div>
             </div>
             <div><div style={{...CAPT,fontSize:9.5,color:C.stone,marginBottom:3}}>Location</div><div style={{fontWeight:700}}>{task.area||"—"}</div></div>
             <div><div style={{...CAPT,fontSize:9.5,color:C.stone,marginBottom:3}}>Priority</div><div style={{fontWeight:700,color:PRI_FG[task.priority]}}>{task.priority}</div></div>
@@ -1864,14 +1995,21 @@ function NewJobModal({onCancel,onCreate}){
 }
 
 function NewTaskModal({userName,lockedProject,projects,companies,trades,savePhoto,requestAnnotate,onCancel,onCreate}){
-  const [f,setF]=useState({project:lockedProject||projects[0]?.name||"",area:"",description:"",trade:"",priority:"Medium",dueDate:today()});
-  const [photos,setPhotos]=useState([]); const fileRef=useRef();
-  const set=k=>e=>setF({...f,[k]:e.target.value}); const ok=f.project&&f.area&&f.description&&f.trade;
+  const [f,setF]=useState({project:lockedProject||projects[0]?.name||"",area:"",description:"",trades:[],priority:"Medium",dueDate:today()});
+  const [photos,setPhotos]=useState([]); const [creating,setCreating]=useState(false); const fileRef=useRef();
+  const set=k=>e=>setF({...f,[k]:e.target.value});
+  const ok=f.project&&f.area&&f.description&&f.trades.length>0;
   const hFile=async e=>{const file=e.target.files[0];e.target.value="";if(!file)return;const c=await compress(file);requestAnnotate(c,async ann=>setPhotos(p=>[...p,ann]));};
-  const create=async()=>{const ids=[];for(const p of photos)ids.push(await savePhoto(p));onCreate({id:uid(),...f,project:f.project.trim(),area:f.area.trim(),trade:f.trade.trim(),status:"Reported",approval:"Pending",photos:ids,comments:[],statusHistory:[],createdBy:userName,createdAt:Date.now(),approvedBy:null,approvedAt:null});};
+  const create=async()=>{
+    setCreating(true);
+    const ids=[];for(const p of photos)ids.push(await savePhoto(p));
+    onCreate({id:uid(),...f,project:f.project.trim(),area:f.area.trim(),
+      trade:f.trades.join(", "),trades:f.trades,
+      status:"Reported",approval:"Pending",photos:ids,comments:[],statusHistory:[],createdBy:userName,createdAt:Date.now(),approvedBy:null,approvedAt:null});
+    setCreating(false);
+  };
 
-  const companyNames = companies.map(c=>c.name);
-  const extraTrades  = trades.filter(t=>!companyNames.includes(t));
+  const allTradeOptions = [...new Set([...companies.map(c=>c.name),...trades])].sort();
 
   return(<Modal onClose={onCancel}><div style={{padding:18}}>
     <h2 style={{...DISP,fontSize:26,margin:"0 0 13px"}}>New Punch Item</h2>
@@ -1879,25 +2017,30 @@ function NewTaskModal({userName,lockedProject,projects,companies,trades,savePhot
       <div><Lbl>Job</Lbl>{lockedProject?<input value={lockedProject} disabled style={{background:"#EDEDE8"}}/>:<select value={f.project} onChange={set("project")}>{projects.map(p=><option key={p.id} value={p.name}>{p.name}</option>)}</select>}</div>
       <div><Lbl>Room / area</Lbl><input value={f.area} onChange={set("area")} placeholder="e.g. Primary Bath"/></div>
       <div style={{gridColumn:"1 / -1"}}><Lbl>Task description</Lbl><textarea rows={3} value={f.description} onChange={set("description")} placeholder="Specific and verifiable."/></div>
-      <div>
-        <Lbl>Assigned trade</Lbl>
-        <select value={f.trade} onChange={set("trade")} style={{color:f.trade?undefined:C.stone}}>
-          <option value="">— Select trade —</option>
-          {companyNames.length>0&&<optgroup label="Trade Directory">{companyNames.map(n=><option key={n} value={n}>{n}</option>)}</optgroup>}
-          {extraTrades.length>0&&<optgroup label="Other (not in directory)">{extraTrades.map(n=><option key={n} value={n}>{n}</option>)}</optgroup>}
-        </select>
-        {f.trade&&companies.find(c=>c.name===f.trade)&&(()=>{
-          const co=companies.find(c=>c.name===f.trade);
-          return <div style={{fontSize:12,color:C.taupe,marginTop:4}}>{[co.tradeType,co.contactName,co.phone].filter(Boolean).join(" · ")||"No contact info"}</div>;
-        })()}
-        {f.trade&&!companies.find(c=>c.name===f.trade)&&<div style={{fontSize:12,color:C.amber,marginTop:4}}>Not in trade directory — add them to send emails.</div>}
+      <div style={{gridColumn:"1/-1"}}>
+        <Lbl>Assigned trade(s)</Lbl>
+        <TradeCombobox
+          value={f.trades}
+          onChange={v=>setF(p=>({...p,trades:v}))}
+          allTrades={allTradeOptions}
+          companies={companies}
+          placeholder="Search trades…"
+        />
+        {f.trades.some(t=>!companies.find(c=>c.name===t))&&(
+          <div style={{fontSize:12,color:C.amber,marginTop:4}}>⚠ Some trades not in directory — add them to send emails.</div>
+        )}
       </div>
       <div><Lbl>Priority</Lbl><select value={f.priority} onChange={set("priority")}>{PRIORITIES.map(p=><option key={p}>{p}</option>)}</select></div>
       <div><Lbl>Due date</Lbl><input type="date" value={f.dueDate} onChange={set("dueDate")}/></div>
       <div><Lbl>Photos</Lbl><Btn kind="ghost" style={{width:"100%"}} onClick={()=>fileRef.current.click()}>📷 Add photo</Btn><input ref={fileRef} type="file" accept="image/*" capture="environment" onChange={hFile} style={{display:"none"}}/></div>
     </div>
     {photos.length>0&&<div style={{display:"flex",gap:7,marginTop:10,flexWrap:"wrap"}}>{photos.map((p,i)=><img key={i} src={p} alt="" style={{width:66,height:66,objectFit:"cover",borderRadius:7}}/>)}</div>}
-    <div style={{display:"flex",gap:9,marginTop:16,justifyContent:"flex-end"}}><Btn kind="ghost" onClick={onCancel}>Cancel</Btn><Btn disabled={!ok} style={{opacity:ok?1:0.4}} onClick={create}>Create task</Btn></div>
+    <div style={{display:"flex",gap:9,marginTop:16,justifyContent:"flex-end"}}>
+      <Btn kind="ghost" onClick={onCancel}>Cancel</Btn>
+      <Btn disabled={!ok||creating} style={{opacity:!ok||creating?0.4:1}} onClick={create}>
+        {creating?<span style={{display:"flex",alignItems:"center",gap:6}}><Spinner/>Creating…</span>:"Create task"}
+      </Btn>
+    </div>
   </div></Modal>);
 }
 
@@ -1940,10 +2083,10 @@ function Annotator({dataUrl,onCancel,onSave}){
 
   const pos=e=>{const cv=cvRef.current;const r=cv.getBoundingClientRect();return[((e.clientX-r.left)/r.width)*cv.width,((e.clientY-r.top)/r.height)*cv.height];};
   const onPD=e=>{e.preventDefault();cvRef.current.setPointerCapture(e.pointerId);curRef.current={color:cRef.current,size:pRef.current,points:[pos(e)]};};
-  const onPM=e=>{if(!curRef.current)return;curRef.current.points.push(pos(e));redraw();};
+  const onPM=e=>{e.preventDefault();if(!curRef.current)return;curRef.current.points.push(pos(e));redraw();};
   const onPU=()=>{if(curRef.current){sRef.current.push(curRef.current);curRef.current=null;setT(v=>v+1);}};
 
-  return(<div className="no-print" style={{position:"fixed",inset:0,background:"#111",zIndex:80,display:"flex",flexDirection:"column"}}>
+  return(<div className="no-print" style={{position:"fixed",inset:0,background:"#111",zIndex:80,display:"flex",flexDirection:"column",userSelect:"none",WebkitUserSelect:"none",MozUserSelect:"none"}}>
     <div style={{padding:"10px 14px",display:"flex",gap:10,alignItems:"center",flexWrap:"wrap",background:"#1a1918"}}>
       <span style={{...DISP,color:"#fff",fontSize:18,fontWeight:600,marginRight:4}}>Mark Up Photo</span>
       <div style={{display:"flex",gap:5,flexWrap:"wrap",alignItems:"center"}}>
@@ -1974,7 +2117,7 @@ function Annotator({dataUrl,onCancel,onSave}){
     </div>
     <div style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",padding:10,minHeight:0}}>
       <canvas ref={cvRef} onPointerDown={onPD} onPointerMove={onPM} onPointerUp={onPU} onPointerCancel={onPU}
-        style={{maxWidth:"100%",maxHeight:"100%",touchAction:"none",borderRadius:6,background:"#000",cursor:"crosshair"}}/>
+        style={{maxWidth:"100%",maxHeight:"100%",touchAction:"none",borderRadius:6,background:"#000",cursor:"crosshair",userSelect:"none",WebkitUserSelect:"none",WebkitTouchCallout:"none"}}/>
     </div>
     <div style={{textAlign:"center",color:"#555",fontSize:12,paddingBottom:10}}>
       Draw to circle or mark up the issue. Pick color and thickness above. ↩ Undo to remove last stroke.
