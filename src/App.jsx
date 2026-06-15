@@ -446,9 +446,14 @@ function PubTaskDetail({task,loadPhoto,onLightbox,onClose,onUpdate,trades=[]}){
             </div>
           )}
           {task.approval==="Rejected"&&(
-            <div style={{marginBottom:14,padding:"10px 14px",background:"#F9EDEC",border:`2px solid ${C.rust}`,borderRadius:9}}>
-              <div style={{color:C.rust,fontWeight:700,fontSize:14,marginBottom:task.rejectionReason?4:0}}>✗ Work rejected — corrections required</div>
-              {task.rejectionReason&&<div style={{fontSize:13,color:C.rust}}>{task.rejectionReason}</div>}
+            <div style={{marginBottom:14,padding:"12px 14px",background:"#F9EDEC",border:`2px solid ${C.rust}`,borderRadius:9}}>
+              <div style={{color:C.rust,fontWeight:700,fontSize:14,marginBottom:task.rejectionReason?6:0}}>✗ Work rejected — corrections required</div>
+              {task.rejectionReason&&<div style={{fontSize:13,color:C.rust,lineHeight:1.5,marginBottom:(task.rejectionPhotos||[]).length>0?10:0}}>{task.rejectionReason}</div>}
+              {(task.rejectionPhotos||[]).length>0&&(
+                <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                  {(task.rejectionPhotos||[]).map(pid=><PhotoThumb key={pid} pid={pid} loadPhoto={loadPhoto} size={80} onClick={()=>onLightbox(pid)}/>)}
+                </div>
+              )}
             </div>
           )}
 
@@ -1403,7 +1408,56 @@ function TaskDetail({taskId,tasks:allTasks,userName,loadPhoto,savePhoto,requestA
   const [editF,setEditF]=useState({area:task.area,description:task.description,trade:task.trade,priority:task.priority,dueDate:task.dueDate||""});
   const startEdit=()=>{setEditF({area:task.area,description:task.description,trade:task.trade,priority:task.priority,dueDate:task.dueDate||""});setEditing(true);};
   const fileRef=useRef();
+  const rejFileRef=useRef();
   const overdue=task.dueDate&&task.dueDate<today()&&task.status!=="Done";
+  // Rejection panel state
+  const [showRejectPanel,setShowRejectPanel]=useState(false);
+  const [rejReason,setRejReason]=useState("");
+  const [rejPhotos,setRejPhotos]=useState([]); // [{dataUrl, pid}] — pid set after save
+  const [rejSaving,setRejSaving]=useState(false);
+
+  const addRejPhoto=async e=>{
+    const file=e.target.files[0]; e.target.value=""; if(!file)return;
+    const c=await compress(file);
+    requestAnnotate(c,ann=>setRejPhotos(p=>[...p,{dataUrl:ann,pid:null}]));
+  };
+
+  const submitRejection=async()=>{
+    if(!rejReason.trim())return;
+    setRejSaving(true);
+    // Save rejection photos and collect their pids
+    const savedPids=[];
+    for(const rp of rejPhotos){
+      const pid=await savePhoto(rp.dataUrl);
+      savedPids.push(pid);
+    }
+    const rejEntry={
+      id:uid(),
+      ts:Date.now(),
+      by:userName,
+      reason:rejReason.trim(),
+      photos:savedPids,
+    };
+    await onUpdate({
+      approval:"Rejected",
+      status:"Reported",
+      approvedBy:null,
+      approvedAt:null,
+      rejectionReason:rejReason.trim(),
+      rejectionPhotos:savedPids,
+      statusHistory:[...(task.statusHistory||[]),{
+        status:"Needs Corrections",
+        by:userName,
+        ts:rejEntry.ts,
+        reason:rejReason.trim(),
+        photos:savedPids,
+      }],
+    });
+    setRejReason("");
+    setRejPhotos([]);
+    setShowRejectPanel(false);
+    setRejSaving(false);
+  };
   const mentionables=[
     ...([userName].filter(Boolean)),
     ...(companies||[]).map(c=>c.name),
@@ -1418,9 +1472,13 @@ function TaskDetail({taskId,tasks:allTasks,userName,loadPhoto,savePhoto,requestA
     {ts:task.createdAt,label:"Task reported",by:task.createdBy||"Team",color:C.taupe},
     ...(task.statusHistory||[]).map(h=>({
       ts:h.ts,
-      label:`Status → ${h.status}`,
+      label:h.status==="Needs Corrections"&&h.reason
+        ?`Needs Corrections — "${h.reason}"`
+        :`Status → ${h.status}`,
       by:h.by,
-      color:h.status==="Rejected"?C.rust:h.status==="Approved"||h.status==="Re-submitted"?C.sage:STATUS_META[h.status]?.fg||C.taupe
+      color:h.status==="Needs Corrections"||h.status==="Rejected"?C.rust:h.status==="Approved"?C.sage:STATUS_META[h.status]?.fg||C.taupe,
+      rejectionPhotos:h.photos||[],
+      isRejection:h.status==="Needs Corrections"&&(h.reason||(h.photos||[]).length>0),
     })),
     ...(task.comments||[]).filter(c=>!c.text.startsWith("REJECTED:")).map(c=>({ts:c.ts,label:c.text,by:c.author,color:C.stone,isComment:true})),
   ].sort((a,b)=>a.ts-b.ts);
@@ -1490,6 +1548,17 @@ function TaskDetail({taskId,tasks:allTasks,userName,loadPhoto,savePhoto,requestA
               ✓ Approved by {task.approvedBy} — {fmtDate(new Date(task.approvedAt).toISOString().slice(0,10))}
             </div>
           )}
+          {task.approval==="Rejected"&&(
+            <div style={{marginTop:12,padding:"12px 14px",background:"#FBF3F1",border:`1.5px solid ${C.rust}`,borderRadius:8}}>
+              <div style={{fontWeight:700,fontSize:13,color:C.rust,marginBottom:task.rejectionReason?6:0}}>✗ Needs Corrections</div>
+              {task.rejectionReason&&<div style={{fontSize:13,color:C.rust,marginBottom:(task.rejectionPhotos||[]).length>0?10:0,lineHeight:1.5}}>{task.rejectionReason}</div>}
+              {(task.rejectionPhotos||[]).length>0&&(
+                <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                  {(task.rejectionPhotos||[]).map(pid=><PhotoThumb key={pid} pid={pid} loadPhoto={loadPhoto} size={72} onClick={()=>onLightbox(pid)}/>)}
+                </div>
+              )}
+            </div>
+          )}
         </TaskSection>
 
         {/* Progress & Approval */}
@@ -1506,14 +1575,59 @@ function TaskDetail({taskId,tasks:allTasks,userName,loadPhoto,savePhoto,requestA
               </React.Fragment>
             ))}
           </div>
-          <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
+          <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center",marginBottom:showRejectPanel?12:0}}>
             <span style={{...CAPT,fontSize:10,color:C.taupe,fontWeight:600}}>Approval:</span>
-            <Btn kind="green" style={{padding:"7px 13px",fontSize:13}} onClick={()=>onUpdate({approval:"Approved",status:"Done",approvedBy:userName,approvedAt:Date.now(),statusHistory:[...(task.statusHistory||[]),{status:"Approved",by:userName,ts:Date.now()}]})}>✓ Approve</Btn>
-            <Btn kind="ghost" style={{padding:"7px 13px",fontSize:13,border:`1px solid ${C.amber}`,color:C.amber}} onClick={()=>onUpdate({approval:"Rejected",status:"Reported",approvedBy:null,approvedAt:null,statusHistory:[...(task.statusHistory||[]),{status:"Needs Corrections",by:userName,ts:Date.now()}]})}>⚑ Needs Corrections</Btn>
+            <Btn kind="green" style={{padding:"7px 13px",fontSize:13}} onClick={()=>{setShowRejectPanel(false);onUpdate({approval:"Approved",status:"Done",approvedBy:userName,approvedAt:Date.now(),statusHistory:[...(task.statusHistory||[]),{status:"Approved",by:userName,ts:Date.now()}]});}}>✓ Approve</Btn>
+            <Btn kind="ghost" style={{padding:"7px 13px",fontSize:13,border:`1px solid ${showRejectPanel?C.rust:C.amber}`,color:showRejectPanel?C.rust:C.amber,background:showRejectPanel?"#FBF3F1":"transparent"}}
+              onClick={()=>{setShowRejectPanel(p=>!p);setRejReason("");setRejPhotos([]);}}>
+              {showRejectPanel?"✕ Cancel":"⚑ Needs Corrections"}
+            </Btn>
             {task.approval==="Approved"&&<Btn kind="ghost" style={{padding:"7px 13px",fontSize:13}} onClick={()=>onUpdate({approval:"Pending",status:"Reported",approvedBy:null,approvedAt:null})}>Clear</Btn>}
             <div style={{flex:1}}/>
             <Btn kind="ghost" style={{color:C.rust,fontSize:13,padding:"7px 13px"}} onClick={()=>window.confirm("Delete this task?")&&onDelete()}>Delete</Btn>
           </div>
+
+          {/* Rejection panel — slides in when "Needs Corrections" clicked */}
+          {showRejectPanel&&(
+            <div style={{background:"#FBF3F1",border:`1.5px solid ${C.rust}`,borderRadius:10,padding:"14px 16px"}}>
+              <div style={{...CAPT,fontSize:10,fontWeight:700,color:C.rust,marginBottom:10}}>Rejection details</div>
+              <div style={{marginBottom:10}}>
+                <label style={{fontSize:12.5,fontWeight:600,color:C.taupe,display:"block",marginBottom:5}}>Reason <span style={{color:C.rust}}>*</span></label>
+                <textarea
+                  value={rejReason}
+                  onChange={e=>setRejReason(e.target.value)}
+                  rows={3}
+                  placeholder="Be specific — e.g. Grout lines uneven in NW corner, lippage exceeds 1/16″. Redo required."
+                  style={{width:"100%",boxSizing:"border-box",padding:"9px 12px",fontSize:14,borderRadius:8,border:`1px solid ${C.rust}`,resize:"vertical",lineHeight:1.5,background:"#fff"}}
+                />
+              </div>
+              <div style={{marginBottom:12}}>
+                <label style={{fontSize:12.5,fontWeight:600,color:C.taupe,display:"block",marginBottom:6}}>Photos <span style={{fontSize:11,fontWeight:400,color:C.stone}}>(optional)</span></label>
+                <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
+                  {rejPhotos.map((rp,i)=>(
+                    <div key={i} style={{position:"relative"}}>
+                      <img src={rp.dataUrl} alt="" style={{width:72,height:72,objectFit:"cover",borderRadius:8,border:`2px solid ${C.rust}`}}/>
+                      <button onClick={()=>setRejPhotos(p=>p.filter((_,j)=>j!==i))}
+                        style={{position:"absolute",top:-6,right:-6,width:20,height:20,borderRadius:"50%",background:C.rust,color:"#fff",border:"none",fontSize:13,lineHeight:1,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>×</button>
+                    </div>
+                  ))}
+                  <button onClick={()=>rejFileRef.current.click()}
+                    style={{width:72,height:72,borderRadius:8,border:`2px dashed ${C.rust}`,background:"#fff",color:C.rust,fontSize:12,cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:3}}>
+                    <span style={{fontSize:20}}>📷</span>
+                    <span>Add</span>
+                  </button>
+                  <input ref={rejFileRef} type="file" accept="image/*" capture="environment" onChange={addRejPhoto} style={{display:"none"}}/>
+                </div>
+              </div>
+              <div style={{display:"flex",gap:9,justifyContent:"flex-end"}}>
+                <Btn kind="ghost" onClick={()=>{setShowRejectPanel(false);setRejReason("");setRejPhotos([]);}}>Cancel</Btn>
+                <Btn kind="red" disabled={!rejReason.trim()||rejSaving} style={{opacity:!rejReason.trim()||rejSaving?0.5:1}}
+                  onClick={submitRejection}>
+                  {rejSaving?"Saving…":"✗ Submit Rejection"}
+                </Btn>
+              </div>
+            </div>
+          )}
         </TaskSection>
 
         {/* Photos */}
@@ -1546,11 +1660,16 @@ function TaskDetail({taskId,tasks:allTasks,userName,loadPhoto,savePhoto,requestA
           <div style={{position:"relative",paddingLeft:22}}>
             <div style={{position:"absolute",left:6,top:4,bottom:4,width:2,background:C.line}}/>
             {timeline.map((ev,i)=>(
-              <div key={i} style={{position:"relative",marginBottom:13}}>
+              <div key={i} style={{position:"relative",marginBottom:14}}>
                 <div style={{position:"absolute",left:-18,top:4,width:10,height:10,borderRadius:"50%",background:ev.color,border:"2px solid #fff",boxShadow:`0 0 0 1.5px ${ev.color}`}}/>
                 <div style={{fontSize:11.5,color:C.stone}}>{fmtDT(ev.ts)}</div>
-                <div style={{fontSize:13.5,fontWeight:ev.isComment?400:600,marginTop:1,color:ev.isComment?C.taupe:C.ink}}>{ev.label}</div>
+                <div style={{fontSize:13.5,fontWeight:ev.isComment?400:600,marginTop:1,color:ev.isRejection?C.rust:ev.isComment?C.taupe:C.ink}}>{ev.label}</div>
                 <div style={{fontSize:11.5,color:C.stone}}>by {ev.by}</div>
+                {ev.isRejection&&(ev.rejectionPhotos||[]).length>0&&(
+                  <div style={{display:"flex",gap:5,marginTop:6,flexWrap:"wrap"}}>
+                    {ev.rejectionPhotos.map(pid=><PhotoThumb key={pid} pid={pid} loadPhoto={loadPhoto} size={60} onClick={()=>onLightbox(pid)}/>)}
+                  </div>
+                )}
               </div>
             ))}
           </div>
@@ -2277,7 +2396,7 @@ function Report({tasks,jobLabel,filters,userName,loadPhoto,onBack,project}){
   const doExport=async()=>{setExporting(true);try{
     const pm={};
     for(const t of tasks){
-      for(const pid of (t.photos||[]).slice(0,3)){
+      for(const pid of [...(t.photos||[]).slice(0,3),...(t.rejectionPhotos||[]).slice(0,2)]){
         if(pid&&!pm[pid])pm[pid]=await loadPhoto(pid);
       }
     }
@@ -2286,12 +2405,17 @@ function Report({tasks,jobLabel,filters,userName,loadPhoto,onBack,project}){
     for(const [proj,areas] of Object.entries(groups)){
       body+=`<h2>${esc(proj)}</h2>`;
       for(const [area,list] of Object.entries(areas)){
-        body+=`<h3>${esc(area)}</h3><table><thead><tr><th>Photo</th><th>Description</th><th>Trade</th><th>Priority</th><th>Due</th><th>Progress</th><th>Approval</th><th>Approved by</th></tr></thead><tbody>`;
+        body+=`<h3>${esc(area)}</h3><table><thead><tr><th>Photo</th><th>Description</th><th>Trade</th><th>Priority</th><th>Due</th><th>Progress</th><th>Approval</th><th>Approved / Rejected by</th></tr></thead><tbody>`;
         for(const t of list){
           const img=t.photos?.[0]&&pm[t.photos[0]]?`<img src="${pm[t.photos[0]]}" style="width:50px;height:50px;object-fit:cover;border-radius:5px">`:"—";
-          const appr=t.approval==="Approved"?`${fmtDate(new Date(t.approvedAt).toISOString().slice(0,10))} — ${esc(t.approvedBy)}`:"—";
+          const appr=t.approval==="Approved"?`${fmtDate(new Date(t.approvedAt).toISOString().slice(0,10))} — ${esc(t.approvedBy)}`:t.approval==="Rejected"?"See rejection row":"—";
           const am={Approved:{bg:"#E0EDDB",fg:"#5A8A4F"},Rejected:{bg:"#FFF3CD",fg:"#856404"},Pending:{bg:"#F0EDE8",fg:"#9A7B4F"}}[t.approval||"Pending"]||{bg:"#F0EDE8",fg:"#9A7B4F"};
-          body+=`<tr><td>${img}</td><td>${esc(t.description)}</td><td>${esc(t.trade)}</td><td style="color:${PRI_FG[t.priority]};font-weight:600">${t.priority}</td><td>${fmtDate(t.dueDate)}</td><td><span style="${sm(t.status)}">${t.status}</span></td><td><span style="background:${am.bg};color:${am.fg};padding:2px 8px;border-radius:5px;font-weight:700;font-size:11px">${t.approval||"Pending"}</span></td><td>${appr}</td></tr>`;
+          const hasRej=t.approval==="Rejected"&&(t.rejectionReason||(t.rejectionPhotos||[]).length>0);
+          body+=`<tr style="${hasRej?"border-bottom:none":""}" ><td>${img}</td><td>${esc(t.description)}</td><td>${esc(t.trade)}</td><td style="color:${PRI_FG[t.priority]};font-weight:600">${t.priority}</td><td>${fmtDate(t.dueDate)}</td><td><span style="${sm(t.status)}">${t.status}</span></td><td><span style="background:${am.bg};color:${am.fg};padding:2px 8px;border-radius:5px;font-weight:700;font-size:11px">${t.approval||"Pending"}</span></td><td>${appr}</td></tr>`;
+          if(hasRej){
+            const rejImgs=(t.rejectionPhotos||[]).slice(0,3).map(pid=>pm[pid]?`<img src="${pm[pid]}" style="width:48px;height:48px;object-fit:cover;border-radius:5px;margin-right:4px">`:"").join("");
+            body+=`<tr><td colspan="8" style="background:#FDF5F4;padding:6px 8px 10px 12px;border-bottom:1px solid #E8E4DE"><div style="display:flex;gap:14px;align-items:flex-start;flex-wrap:wrap"><div style="flex:1;min-width:160px"><div style="font-size:9px;text-transform:uppercase;letter-spacing:0.08em;font-weight:700;color:#B04035;margin-bottom:3px">Rejection reason</div><div style="font-size:12px;color:#B04035;line-height:1.5">${esc(t.rejectionReason||"")}</div></div>${rejImgs?`<div style="display:flex;gap:4px;flex-wrap:wrap">${rejImgs}</div>`:""}</div></td></tr>`;
+          }
         }
         body+=`</tbody></table>`;
       }
@@ -2316,17 +2440,38 @@ function Report({tasks,jobLabel,filters,userName,loadPhoto,onBack,project}){
         {Object.entries(areas).map(([area,list])=>(<div key={area} style={{marginTop:12}}>
           <div style={{...CAPT,fontSize:11.5,fontWeight:600,color:C.taupe}}>{area}</div>
           <table style={{width:"100%",borderCollapse:"collapse",marginTop:5,fontSize:13}}>
-            <thead><tr style={{textAlign:"left",color:C.taupe,borderBottom:`1px solid ${C.stone}`}}>{["Photo","Description","Trade","Priority","Due","Progress","Approval","Approved by"].map(h=><th key={h} style={{...CAPT,fontSize:10,fontWeight:600,padding:"4px 6px"}}>{h}</th>)}</tr></thead>
-            <tbody>{list.map(t=>(<tr key={t.id} style={{borderBottom:"1px solid #E8E4DE",verticalAlign:"top"}}>
-              <td style={{padding:"5px 6px"}}><PhotoThumb pid={t.photos?.[0]} loadPhoto={loadPhoto} size={50}/></td>
-              <td style={{padding:"5px 6px"}}>{t.description}</td>
-              <td style={{padding:"5px 6px"}}>{t.trade}</td>
-              <td style={{padding:"5px 6px",color:PRI_FG[t.priority],fontWeight:600}}>{t.priority}</td>
-              <td style={{padding:"5px 6px"}}>{fmtDate(t.dueDate)}</td>
-              <td style={{padding:"5px 6px"}}><StatusChip status={t.status}/></td>
-              <td style={{padding:"5px 6px"}}><ApprovalChip approval={t.approval}/></td>
-              <td style={{padding:"5px 6px"}}>{t.approval==="Approved"?`${fmtDate(new Date(t.approvedAt).toISOString())} — ${t.approvedBy}`:"—"}</td>
-            </tr>))}</tbody>
+            <thead><tr style={{textAlign:"left",color:C.taupe,borderBottom:`1px solid ${C.stone}`}}>{["Photo","Description","Trade","Priority","Due","Progress","Approval","Approved / Rejected by"].map(h=><th key={h} style={{...CAPT,fontSize:10,fontWeight:600,padding:"4px 6px"}}>{h}</th>)}</tr></thead>
+            <tbody>{list.map(t=>(
+              <React.Fragment key={t.id}>
+                <tr style={{borderBottom:t.approval==="Rejected"&&(t.rejectionReason||(t.rejectionPhotos||[]).length>0)?"none":"1px solid #E8E4DE",verticalAlign:"top"}}>
+                  <td style={{padding:"5px 6px"}}><PhotoThumb pid={t.photos?.[0]} loadPhoto={loadPhoto} size={50}/></td>
+                  <td style={{padding:"5px 6px"}}>{t.description}</td>
+                  <td style={{padding:"5px 6px"}}>{t.trade}</td>
+                  <td style={{padding:"5px 6px",color:PRI_FG[t.priority],fontWeight:600}}>{t.priority}</td>
+                  <td style={{padding:"5px 6px"}}>{fmtDate(t.dueDate)}</td>
+                  <td style={{padding:"5px 6px"}}><StatusChip status={t.status}/></td>
+                  <td style={{padding:"5px 6px"}}><ApprovalChip approval={t.approval}/></td>
+                  <td style={{padding:"5px 6px"}}>{t.approval==="Approved"?`${fmtDate(new Date(t.approvedAt).toISOString())} — ${t.approvedBy}`:t.approval==="Rejected"?"See below":"—"}</td>
+                </tr>
+                {t.approval==="Rejected"&&(t.rejectionReason||(t.rejectionPhotos||[]).length>0)&&(
+                  <tr style={{borderBottom:"1px solid #E8E4DE"}}>
+                    <td colSpan={8} style={{padding:"6px 8px 10px 12px",background:"#FDF5F4"}}>
+                      <div style={{display:"flex",gap:12,alignItems:"flex-start",flexWrap:"wrap"}}>
+                        <div style={{flex:1,minWidth:180}}>
+                          <div style={{...CAPT,fontSize:9,fontWeight:700,color:C.rust,marginBottom:3}}>Rejection reason</div>
+                          <div style={{fontSize:13,color:C.rust,lineHeight:1.5}}>{t.rejectionReason||"—"}</div>
+                        </div>
+                        {(t.rejectionPhotos||[]).length>0&&(
+                          <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
+                            {(t.rejectionPhotos||[]).map(pid=><PhotoThumb key={pid} pid={pid} loadPhoto={loadPhoto} size={60} onClick={()=>onLightbox(pid)}/>)}
+                          </div>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                )}
+              </React.Fragment>
+            ))}</tbody>
           </table>
         </div>))}
       </div>))}
