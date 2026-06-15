@@ -43,16 +43,37 @@ export async function getTasks() {
 
 export async function upsertTask(task) {
   const payload = taskToDb(task);
-  console.log("upsertTask called, id:", payload.id, "approval:", payload.approval, "status:", payload.status);
-  const { data, error } = await supabase
+
+  // First try UPDATE (works for existing rows even with strict RLS)
+  const { data: updateData, error: updateError } = await supabase
     .from("tasks")
-    .upsert(payload, { onConflict: "id" })
+    .update(payload)
+    .eq("id", payload.id)
     .select("id");
-  if (error) {
-    console.error("upsertTask FAILED:", JSON.stringify(error));
-    throw new Error(JSON.stringify(error));
+
+  if (updateError) {
+    console.error("upsertTask UPDATE failed:", JSON.stringify(updateError));
+    // Fall back to INSERT for brand-new tasks
+    const { error: insertError } = await supabase
+      .from("tasks")
+      .insert(payload);
+    if (insertError) {
+      console.error("upsertTask INSERT also failed:", JSON.stringify(insertError));
+      throw new Error(insertError.message || JSON.stringify(insertError));
+    }
+    return;
   }
-  console.log("upsertTask SUCCESS, rows affected:", data?.length);
+
+  // If update matched 0 rows it's a new task — insert it
+  if (!updateData || updateData.length === 0) {
+    const { error: insertError } = await supabase
+      .from("tasks")
+      .insert(payload);
+    if (insertError) {
+      console.error("upsertTask INSERT (new task) failed:", JSON.stringify(insertError));
+      throw new Error(insertError.message || JSON.stringify(insertError));
+    }
+  }
 }
 
 // Direct update — used by RejectionPanel to bypass React state chain
