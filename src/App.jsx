@@ -695,7 +695,7 @@ function InternalApp() {
         onLightbox={setLightbox} onClose={()=>setOpenTaskId(null)}
         onUpdate={async patch=>{
           if(patch.status&&patch.status!==openTask.status) markNotif(openTask.trade,openTask.id);
-          await updateTaskById(openTask.id, patchOrTask);
+          await updateTaskById(openTask.id, patch);
         }}
         onDelete={async()=>{await removeTask(openTask.id);setOpenTaskId(null);}}/>}
       {showMentions&&<MentionsModal userName={user} tasks={tasks} onOpenTask={id=>{setOpenTaskId(id);setShowMentions(false);}} onClose={()=>setShowMentions(false)}/>}
