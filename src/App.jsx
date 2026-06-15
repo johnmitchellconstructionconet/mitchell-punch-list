@@ -2226,7 +2226,7 @@ function Report({tasks,jobLabel,filters,userName,loadPhoto,onBack,project}){
   const doExport=async()=>{setExporting(true);try{
     const pm={};
     for(const t of tasks){
-      for(const pid of [...(t.photos||[]),...(t.afterPhotos||[])].slice(0,3)){
+      for(const pid of (t.photos||[]).slice(0,3)){
         if(pid&&!pm[pid])pm[pid]=await loadPhoto(pid);
       }
     }
