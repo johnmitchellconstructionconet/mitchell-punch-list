@@ -43,16 +43,25 @@ export async function getTasks() {
 
 export async function upsertTask(task) {
   const payload = taskToDb(task);
-  // Use update (not upsert) to ensure all columns including jsonb arrays are written
   const { error } = await supabase
     .from("tasks")
     .update(payload)
     .eq("id", task.id);
   if (error) {
-    // Fallback to insert if update fails (new record)
     const { error: insertError } = await supabase.from("tasks").insert(payload);
     if (insertError) console.error("upsertTask error:", JSON.stringify(insertError));
   }
+}
+
+// Direct update — used by RejectionPanel to bypass React state chain
+export async function updateTask(task) {
+  const payload = taskToDb(task);
+  const { error } = await supabase
+    .from("tasks")
+    .update(payload)
+    .eq("id", task.id);
+  if (error) console.error("updateTask error:", JSON.stringify(error));
+  return !error;
 }
 
 export async function deleteTask(id) {
