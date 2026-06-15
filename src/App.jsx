@@ -1238,6 +1238,51 @@ function PhotoThumb({pid,loadPhoto,size=70,onClick}){
   );
 }
 
+/* Stable comment input — owns its own textarea state, never re-mounts */
+function CommentBox({comments,userName,accent,onAdd}){
+  const taRef=useRef();
+  const submit=()=>{
+    const ta=taRef.current;
+    if(!ta||!ta.value.trim())return;
+    onAdd(ta.value);
+    ta.value="";
+  };
+  return(
+    <div>
+      <div style={{display:"grid",gap:7,marginBottom:10}}>
+        {comments.length===0&&<div style={{fontSize:13.5,color:C.taupe}}>No comments yet.</div>}
+        {comments.map(c=>(
+          <div key={c.id} style={{background:"#fff",border:`1px solid ${C.line}`,borderRadius:8,padding:"9px 12px",
+            borderLeft:`3px solid ${c.text.startsWith("REJECTED:")?C.rust:c.role==="internal"?accent:C.line}`}}>
+            <div style={{fontSize:12,color:C.taupe,marginBottom:3}}>
+              <b style={{color:c.text.startsWith("REJECTED:")?C.rust:c.role==="internal"?accent:C.ink}}>{c.author}</b> · {fmtDT(c.ts)}
+            </div>
+            <div style={{fontSize:14,whiteSpace:"pre-wrap",color:c.text.startsWith("REJECTED:")?C.rust:C.ink,fontWeight:c.text.startsWith("REJECTED:")?600:400}}>
+              <MentionText text={c.text} highlight={userName}/>
+            </div>
+          </div>
+        ))}
+      </div>
+      <div style={{display:"flex",gap:8}}>
+        <textarea ref={taRef} rows={2} placeholder="Add a note…"
+          onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();submit();}}}
+          style={{flex:1,resize:"vertical",boxSizing:"border-box",padding:"9px 12px",fontSize:14,borderRadius:8,border:`1px solid ${C.line}`,lineHeight:1.5}}/>
+        <Btn kind="ghost" style={{alignSelf:"flex-end"}} onClick={submit}>Post</Btn>
+      </div>
+    </div>
+  );
+}
+
+/* Stable reject textarea — never re-mounts, exposes value via id */
+function RejectReasonInput({id}){
+  return(
+    <textarea id={id} rows={4}
+      placeholder="Be specific — e.g. Grout lines uneven in NW corner, lippage exceeds 1/16. Needs to be re-done."
+      style={{width:"100%",border:`1px solid #E8BFBA`,borderRadius:8,padding:"10px 12px",fontSize:14,resize:"vertical",boxSizing:"border-box",background:"#fff",outline:"none",lineHeight:1.5}}
+    />
+  );
+}
+
 function TaskSection({title,children,noBorder,sectionAccent}){
   return(
     <div>
@@ -1439,12 +1484,7 @@ function TaskDetail({task,userName,loadPhoto,savePhoto,requestAnnotate,onLightbo
               </div>
               {/* Reason textarea */}
               <div style={{padding:"12px 14px",borderBottom:`1px solid #F5C6C2`}}>
-                <textarea
-                  id="reject-reason"
-                  rows={4}
-                  placeholder="Be specific — e.g. Grout lines uneven in NW corner, lippage exceeds 1/16. Needs to be re-done."
-                  style={{width:"100%",border:`1px solid #E8BFBA`,borderRadius:8,padding:"10px 12px",fontSize:14,resize:"vertical",boxSizing:"border-box",background:"#fff",outline:"none",lineHeight:1.5}}
-                />
+                <RejectReasonInput id="reject-reason"/>
               </div>
               {/* Photo upload area */}
               <div style={{padding:"12px 14px",borderBottom:`1px solid #F5C6C2`}}>
@@ -1511,27 +1551,12 @@ function TaskDetail({task,userName,loadPhoto,savePhoto,requestAnnotate,onLightbo
 
         {/* Notes & Comments */}
         <TaskSection title="Notes & Comments">
-          <div style={{display:"grid",gap:7,marginBottom:10}}>
-            {(task.comments||[]).length===0&&<div style={{fontSize:13.5,color:C.taupe}}>No comments yet.</div>}
-            {(task.comments||[]).map(c=>(
-              <div key={c.id} style={{background:"#fff",border:`1px solid ${C.line}`,borderRadius:8,padding:"9px 12px",
-                borderLeft:`3px solid ${c.text.startsWith("REJECTED:")?C.rust:c.role==="internal"?accent:C.line}`}}>
-                <div style={{fontSize:12,color:C.taupe,marginBottom:3}}><b style={{color:c.text.startsWith("REJECTED:")?C.rust:c.role==="internal"?accent:C.ink}}>{c.author}</b> · {fmtDT(c.ts)}</div>
-                <div style={{fontSize:14,whiteSpace:"pre-wrap",color:c.text.startsWith("REJECTED:")?C.rust:C.ink,fontWeight:c.text.startsWith("REJECTED:")?600:400}}>
-                  <MentionText text={c.text} highlight={userName}/>
-                </div>
-              </div>
-            ))}
-          </div>
-          <div style={{display:"flex",gap:8}}>
-            <textarea id="internal-comment" rows={2}
-              placeholder="Add a note…"
-              style={{flex:1,resize:"vertical",boxSizing:"border-box",padding:"9px 12px",fontSize:14,borderRadius:8,border:`1px solid ${C.line}`,lineHeight:1.5}}/>
-            <Btn kind="ghost" style={{alignSelf:"flex-end"}} onClick={()=>{
-              const ta=document.getElementById("internal-comment");
-              if(ta&&ta.value.trim()){addComment(ta.value);ta.value="";}
-            }}>Post</Btn>
-          </div>
+          <CommentBox
+            comments={task.comments||[]}
+            userName={userName}
+            accent={accent}
+            onAdd={addComment}
+          />
         </TaskSection>
 
         {/* Activity Timeline */}
