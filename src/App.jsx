@@ -570,7 +570,7 @@ function InternalApp() {
   const [view,         setView]         = useState("main");
   const [currentJob,   setCurrentJob]   = useState(null);
   const [taskMode,     setTaskMode]     = useState("list");
-  const [filters,      setFilters]      = useState({status:"All",trade:"All",q:""});
+  const [filters,      setFilters]      = useState({status:"All",trade:"All",priority:"All",dueDate:"All",q:""});
   const [showBatch,    setShowBatch]    = useState(false);
   const [openTaskId,   setOpenTaskId]   = useState(null);
   const [showNew,      setShowNew]      = useState(false);
@@ -680,10 +680,20 @@ function InternalApp() {
   const currProj  = projects.find(p=>p.name===currentJob);
 
   const PRI_ORDER = {High:0, Medium:1, Low:2};
+  const tdy = today();
   const visible = tasks
     .filter(t=>(!currentJob||currentJob==="ALL")?true:t.project===currentJob)
     .filter(t=>filters.status==="All"||t.status===filters.status)
     .filter(t=>filters.trade==="All"||t.trade===filters.trade)
+    .filter(t=>filters.priority==="All"||t.priority===filters.priority)
+    .filter(t=>{
+      if(filters.dueDate==="All") return true;
+      if(filters.dueDate==="overdue") return t.dueDate&&t.dueDate<tdy&&t.approval!=="Approved";
+      if(filters.dueDate==="today") return t.dueDate===tdy;
+      if(filters.dueDate==="week"){const w=new Date();w.setDate(w.getDate()+7);return t.dueDate&&t.dueDate>=tdy&&t.dueDate<=w.toISOString().slice(0,10);}
+      if(filters.dueDate==="none") return !t.dueDate;
+      return true;
+    })
     .filter(t=>!filters.q||(t.description+" "+t.area+" "+t.project+" "+t.trade).toLowerCase().includes(filters.q.toLowerCase()))
     .sort((a,b)=>{
       // Done tasks always sink to bottom
@@ -718,8 +728,8 @@ function InternalApp() {
             onSignOut={()=>{setAuthed(false);setUser(null);setLoaded(false);setCurrentJob(null);}}/>
           {currentJob===null?(
             <Dashboard projects={projects} tasks={tasks}
-              onOpenJob={n=>{setCurrentJob(n);setFilters({status:"All",trade:"All",q:""});setTaskMode("list");}}
-              onAllJobs={()=>{setCurrentJob("ALL");setTaskMode("list");}}
+              onOpenJob={n=>{setCurrentJob(n);setFilters({status:"All",trade:"All",priority:"All",dueDate:"All",q:""});setTaskMode("list");}}
+              onAllJobs={()=>{setCurrentJob("ALL");setFilters({status:"All",trade:"All",priority:"All",dueDate:"All",q:""});setTaskMode("list");}}
               onCalendar={()=>{setCurrentJob("ALL");setTaskMode("calendar");}}
               onNewJob={()=>setShowNewJob(true)}
               onDirectory={()=>setShowDir(true)}
@@ -1203,6 +1213,8 @@ function JobBar({project,jobLabel,onBack,onQR,onEmailAll,onEdit}){
 function InternalToolbar({filters,setFilters,trades,taskMode,setTaskMode,onNew,onReport,onBatch,counts}){
   const open=counts.filter(t=>t.status!=="Done").length;
   const rej=counts.filter(t=>t.approval==="Rejected").length;
+  const activeFilters=[filters.status!=="All",filters.trade!=="All",filters.priority!=="All",filters.dueDate!=="All",!!filters.q].filter(Boolean).length;
+  const clearAll=()=>setFilters({status:"All",trade:"All",priority:"All",dueDate:"All",q:""});
   return(
     <div style={{padding:"11px 16px",borderBottom:`1px solid ${C.line}`,background:C.card}}>
       <div style={{display:"flex",flexWrap:"wrap",gap:8,alignItems:"center"}}>
@@ -1211,18 +1223,38 @@ function InternalToolbar({filters,setFilters,trades,taskMode,setTaskMode,onNew,o
             <button key={v} onClick={()=>setTaskMode(v)} style={{background:taskMode===v?C.ink:"#fff",color:taskMode===v?"#fff":C.ink,padding:"10px 13px",borderRadius:0,fontSize:14,border:"none"}}>{l}</button>
           ))}
         </div>
-        <select style={{width:"auto"}} value={filters.status} onChange={e=>setFilters({...filters,status:e.target.value})}>
-          <option>All</option>{STATUSES.map(s=><option key={s}>{s}</option>)}
+        <select style={{width:"auto",color:filters.status!=="All"?C.ink:undefined,fontWeight:filters.status!=="All"?700:400}} value={filters.status} onChange={e=>setFilters({...filters,status:e.target.value})}>
+          <option value="All">Status: All</option>{STATUSES.map(s=><option key={s} value={s}>{s}</option>)}
         </select>
-        <select style={{width:"auto"}} value={filters.trade} onChange={e=>setFilters({...filters,trade:e.target.value})}>
-          <option>All</option>{trades.map(t=><option key={t}>{t}</option>)}
+        <select style={{width:"auto",color:filters.priority!=="All"?PRI_FG[filters.priority]||C.ink:undefined,fontWeight:filters.priority!=="All"?700:400}} value={filters.priority} onChange={e=>setFilters({...filters,priority:e.target.value})}>
+          <option value="All">Priority: All</option>
+          <option value="High">High</option>
+          <option value="Medium">Medium</option>
+          <option value="Low">Low</option>
         </select>
-        <input placeholder="Search…" value={filters.q} onChange={e=>setFilters({...filters,q:e.target.value})} style={{flex:1,minWidth:130}}/>
+        <select style={{width:"auto",color:filters.dueDate!=="All"?C.rust:undefined,fontWeight:filters.dueDate!=="All"?700:400}} value={filters.dueDate} onChange={e=>setFilters({...filters,dueDate:e.target.value})}>
+          <option value="All">Due date: All</option>
+          <option value="overdue">Overdue</option>
+          <option value="today">Due today</option>
+          <option value="week">Due this week</option>
+          <option value="none">No due date</option>
+        </select>
+        <select style={{width:"auto",color:filters.trade!=="All"?C.ink:undefined,fontWeight:filters.trade!=="All"?700:400}} value={filters.trade} onChange={e=>setFilters({...filters,trade:e.target.value})}>
+          <option value="All">Trade: All</option>{trades.map(t=><option key={t} value={t}>{t}</option>)}
+        </select>
+        <input placeholder="Search…" value={filters.q} onChange={e=>setFilters({...filters,q:e.target.value})} style={{flex:1,minWidth:120}}/>
         <Btn onClick={onNew}>+ Task</Btn>
         <Btn kind="ghost" onClick={onBatch}>Batch update</Btn>
         <Btn kind="ghost" onClick={onReport}>Report</Btn>
       </div>
-      <div style={{marginTop:8,fontSize:13,color:C.taupe}}><b style={{color:C.ink}}>{open}</b> open{rej>0&&<span style={{color:C.rust,fontWeight:700}}> · {rej} approval rejected</span>}</div>
+      <div style={{marginTop:8,display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+        <span style={{fontSize:13,color:C.taupe}}><b style={{color:C.ink}}>{open}</b> open{rej>0&&<span style={{color:C.rust,fontWeight:700}}> · {rej} rejected</span>} · <b style={{color:C.ink}}>{counts.length}</b> showing</span>
+        {activeFilters>0&&(
+          <button onClick={clearAll} style={{background:C.mist,border:`1px solid ${C.line}`,borderRadius:6,padding:"3px 10px",fontSize:12,color:C.taupe,cursor:"pointer",fontWeight:600}}>
+            ✕ Clear {activeFilters} filter{activeFilters!==1?"s":""}
+          </button>
+        )}
+      </div>
     </div>
   );
 }
@@ -1279,16 +1311,16 @@ function TaskCard({task,showProject,onOpen,loadPhoto}){
     <div onClick={onOpen} style={{background:isRejected?"#FEF6F5":C.card,border:`1px solid ${isRejected?"#F5C6C2":C.line}`,borderLeft:`5px solid ${accent}`,borderRadius:10,cursor:"pointer",overflow:"hidden"}}>
 
       {/* Section 1 — Location header */}
-      <div style={{padding:"8px 13px",borderBottom:`1px solid ${C.line}`,background:C.mist,display:"flex",justifyContent:"space-between",alignItems:"center",gap:8}}>
-        <div style={{display:"flex",alignItems:"center",gap:5,minWidth:0,flex:1}}>
+      <div style={{padding:"7px 13px",borderBottom:`1px solid ${C.line}`,background:C.mist}}>
+        <div style={{display:"flex",alignItems:"baseline",gap:5,marginBottom:5}}>
           <span style={{...CAPT,fontSize:9,color:C.stone,flexShrink:0}}>Location</span>
-          <span style={{fontSize:12.5,fontWeight:700,color:C.ink,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+          <span style={{fontSize:13,fontWeight:700,color:C.ink,wordBreak:"break-word",lineHeight:1.3}}>
             {showProject?`${task.project} — `:""}{task.area}
           </span>
         </div>
-        <div style={{display:"flex",gap:3,flexShrink:0}}>
-          <span style={{...CAPT,background:STATUS_META[task.status]?.bg,color:STATUS_META[task.status]?.fg,fontWeight:700,fontSize:10,padding:"2px 7px",borderRadius:5,whiteSpace:"nowrap"}}>{task.status}</span>
-          <span style={{...CAPT,background:APPROVAL_META[task.approval||"Pending"]?.bg,color:APPROVAL_META[task.approval||"Pending"]?.fg,fontWeight:700,fontSize:10,padding:"2px 7px",borderRadius:5,whiteSpace:"nowrap"}}>{task.approval||"Pending"}</span>
+        <div style={{display:"flex",gap:3}}>
+          <span style={{...CAPT,background:STATUS_META[task.status]?.bg,color:STATUS_META[task.status]?.fg,fontWeight:700,fontSize:9,padding:"2px 6px",borderRadius:4,whiteSpace:"nowrap"}}>{task.status}</span>
+          <span style={{...CAPT,background:APPROVAL_META[task.approval||"Pending"]?.bg,color:APPROVAL_META[task.approval||"Pending"]?.fg,fontWeight:700,fontSize:9,padding:"2px 6px",borderRadius:4,whiteSpace:"nowrap"}}>{task.approval||"Pending"}</span>
         </div>
       </div>
 
