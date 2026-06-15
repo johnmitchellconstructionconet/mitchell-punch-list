@@ -500,6 +500,8 @@ function InternalApp() {
   const [user,         setUser]         = useState(null);
   const [projects,     setProjects]     = useState([]);
   const [tasks,        setTasks]        = useState([]);
+  const tasksRef = useRef([]);
+  useEffect(()=>{ tasksRef.current = tasks; }, [tasks]);
   const [companies,    setCompanies]    = useState([]);
   const [teamCode,     setTeamCode]     = useState("");
   const [loaded,       setLoaded]       = useState(false);
@@ -567,15 +569,10 @@ function InternalApp() {
     await upsertTask(task);
   };
   const updateTaskById = async (id, patch) => {
-    let merged;
-    setTasks(t=>{
-      const existing=t.find(x=>x.id===id)||{};
-      merged={...existing,...patch,id};
-      return t.map(x=>x.id===id?merged:x);
-    });
-    // Small delay to let merged be set from the functional update
-    await new Promise(r=>setTimeout(r,0));
-    if(merged) await upsertTask(merged);
+    const existing = tasksRef.current.find(x=>x.id===id) || {};
+    const merged = {...existing, ...patch, id};
+    setTasks(t=>t.map(x=>x.id===id ? merged : x));
+    await upsertTask(merged);
   };
   const removeTask = async (id) => {
     setTasks(t=>t.filter(x=>x.id!==id));
