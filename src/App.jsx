@@ -693,9 +693,15 @@ function InternalApp() {
         trades={trades} projects={projects} companies={companies}
         requestAnnotate={(d,cb)=>setAnnotate({dataUrl:d,onSave:cb})}
         onLightbox={setLightbox} onClose={()=>setOpenTaskId(null)}
-        onUpdate={async patch=>{
+        onUpdate={async patchOrTask=>{
+          const patch=patchOrTask.id===openTask.id?patchOrTask:patchOrTask;
           if(patch.status&&patch.status!==openTask.status) markNotif(openTask.trade,openTask.id);
-          await updateTaskById(openTask.id, patch);
+          // If full task object passed (from RejectionPanel), just update state — DB already saved
+          if(patchOrTask.id===openTask.id&&patchOrTask.approval){
+            setTasks(t=>t.map(x=>x.id===openTask.id?{...x,...patchOrTask}:x));
+          } else {
+            await updateTaskById(openTask.id, patchOrTask);
+          }
         }}
         onDelete={async()=>{await removeTask(openTask.id);setOpenTaskId(null);}}/>}
       {showMentions&&<MentionsModal userName={user} tasks={tasks} onOpenTask={id=>{setOpenTaskId(id);setShowMentions(false);}} onClose={()=>setShowMentions(false)}/>}
@@ -1349,7 +1355,7 @@ function RejectReasonInput({id}){
    Fully self-contained. Owns its own state. Never shares state
    with TaskDetail so parent re-renders cannot affect its inputs.
    ────────────────────────────────────────────────────────────── */
-function RejectionPanel({onConfirm,onCancel,savePhoto,requestAnnotate}){
+function RejectionPanel({task,userName,savePhoto,requestAnnotate,onSaved,onCancel}){
   const reasonRef=useRef();
   const fileRef=useRef();
   const [photos,setPhotos]=useState([]);
@@ -1363,57 +1369,69 @@ function RejectionPanel({onConfirm,onCancel,savePhoto,requestAnnotate}){
 
   const confirm=async()=>{
     const reason=(reasonRef.current?.value||"").trim();
-    if(!reason)return;
+    if(!reason){reasonRef.current?.focus();return;}
     setSaving(true);
+
+    // Save photos first
     const savedIds=[];
     for(const dataUrl of photos){
       const pid=await savePhoto(dataUrl);
       savedIds.push(pid);
     }
-    onConfirm(reason,savedIds);
+
+    // Build the complete updated task object — no closures, read task directly
+    const now=Date.now();
+    const newRejection={id:uid(),reason,photoIds:savedIds,by:userName,ts:now,count:(task.rejectionCount||0)+1};
+    const updatedTask={
+      ...task,
+      approval:"Rejected",
+      status:"Reported",
+      approvedBy:null,
+      approvedAt:null,
+      rejectionReason:reason,
+      rejectionCount:(task.rejectionCount||0)+1,
+      rejectionHistory:[...(task.rejectionHistory||[]),newRejection],
+      afterPhotos:[...(task.afterPhotos||[]),...savedIds],
+      statusHistory:[...(task.statusHistory||[]),{status:"Rejected",by:userName,reason,ts:now}],
+      comments:[...(task.comments||[]),{id:uid(),author:userName,role:"internal",text:"REJECTED: "+reason,ts:now}],
+    };
+
+    // Save directly to Supabase — bypass the React state chain entirely
+    const {updateTask:dbUpdate}=await import("./supabase.js");
+    await dbUpdate(updatedTask);
+
+    onSaved(updatedTask);
     setSaving(false);
   };
 
   return(
     <div style={{marginTop:14,borderRadius:10,overflow:"hidden",border:`1.5px solid ${C.rust}`}}>
-      {/* Header */}
       <div style={{padding:"10px 14px",background:"#F9E5E3",borderBottom:`1px solid #F5C6C2`}}>
         <div style={{...CAPT,fontSize:10,fontWeight:700,color:C.rust}}>Rejection details</div>
       </div>
-
-      {/* Reason */}
       <div style={{padding:"12px 14px",background:"#FDF0EF",borderBottom:`1px solid #F5C6C2`}}>
         <div style={{...CAPT,fontSize:10,color:C.rust,fontWeight:600,marginBottom:6}}>Reason — what needs to be fixed</div>
-        <textarea
-          ref={reasonRef}
-          rows={4}
+        <textarea ref={reasonRef} rows={4}
           placeholder="Be specific — e.g. Grout lines uneven in NW corner, lippage exceeds 1/16″. Needs to be re-done."
-          style={{width:"100%",boxSizing:"border-box",border:`1px solid #E8BFBA`,borderRadius:8,padding:"10px 12px",fontSize:14,resize:"vertical",lineHeight:1.5,background:"#fff",fontFamily:"inherit"}}
-        />
+          style={{width:"100%",boxSizing:"border-box",border:`1px solid #E8BFBA`,borderRadius:8,padding:"10px 12px",fontSize:14,resize:"vertical",lineHeight:1.5,background:"#fff",fontFamily:"inherit"}}/>
       </div>
-
-      {/* Photos */}
       <div style={{padding:"12px 14px",background:"#FDF0EF",borderBottom:`1px solid #F5C6C2`}}>
-        <div style={{...CAPT,fontSize:10,color:C.rust,fontWeight:600,marginBottom:8}}>Reference photos (optional) — tap to annotate before adding</div>
+        <div style={{...CAPT,fontSize:10,color:C.rust,fontWeight:600,marginBottom:8}}>Reference photos (optional) — annotate to mark the problem</div>
         <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
           {photos.map((src,i)=>(
             <div key={i} style={{position:"relative",flexShrink:0}}>
               <img src={src} alt="" style={{width:88,height:88,objectFit:"cover",borderRadius:8,border:`2px solid #F5C6C2`,display:"block"}}/>
-              <button
-                onClick={()=>setPhotos(p=>p.filter((_,j)=>j!==i))}
+              <button onClick={()=>setPhotos(p=>p.filter((_,j)=>j!==i))}
                 style={{position:"absolute",top:-6,right:-6,width:20,height:20,borderRadius:"50%",background:C.rust,color:"#fff",border:"none",fontSize:12,cursor:"pointer",lineHeight:"20px",textAlign:"center",padding:0}}>×</button>
             </div>
           ))}
-          <button
-            onClick={()=>fileRef.current.click()}
+          <button onClick={()=>fileRef.current.click()}
             style={{width:88,height:88,borderRadius:8,border:`2px dashed #E8BFBA`,background:"#fff",color:C.rust,fontSize:12,cursor:"pointer",fontWeight:600,lineHeight:1.4}}>
             📷<br/>Add photo
           </button>
           <input ref={fileRef} type="file" accept="image/*" capture="environment" onChange={addPhoto} style={{display:"none"}}/>
         </div>
       </div>
-
-      {/* Actions */}
       <div style={{padding:"10px 14px",display:"flex",gap:8,justifyContent:"flex-end",background:"#F9E5E3"}}>
         <Btn kind="ghost" onClick={onCancel}>Cancel</Btn>
         <Btn kind="red" onClick={confirm} disabled={saving} style={{opacity:saving?0.6:1}}>
@@ -1589,28 +1607,14 @@ function TaskDetail({task,userName,loadPhoto,savePhoto,requestAnnotate,onLightbo
           </div>
           {showReject&&(
             <RejectionPanel
+              task={task}
+              userName={userName}
               savePhoto={savePhoto}
               requestAnnotate={requestAnnotate}
               onCancel={()=>setShowReject(false)}
-              onConfirm={(reason,photoIds)=>{
-                const newRejection={
-                  id:uid(),
-                  reason,
-                  photoIds,
-                  by:userName,
-                  ts:Date.now(),
-                  count:(task.rejectionCount||0)+1,
-                };
-                onUpdate({
-                  approval:"Rejected",status:"Reported",
-                  approvedBy:null,approvedAt:null,
-                  rejectionReason:reason,
-                  rejectionCount:(task.rejectionCount||0)+1,
-                  rejectionHistory:[...(task.rejectionHistory||[]),newRejection],
-                  afterPhotos:[...(task.afterPhotos||[]),...photoIds],
-                  statusHistory:[...(task.statusHistory||[]),{status:"Rejected",by:userName,reason,ts:Date.now()}],
-                  comments:[...(task.comments||[]),{id:uid(),author:userName,role:"internal",text:"REJECTED: "+reason,ts:Date.now()}],
-                });
+              onSaved={updatedTask=>{
+                // Sync React state with what was saved to DB
+                onUpdate(updatedTask);
                 setShowReject(false);
               }}
             />
