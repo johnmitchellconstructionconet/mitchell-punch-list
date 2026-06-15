@@ -1266,57 +1266,65 @@ function Dashboard({projects,tasks,onOpenJob,onAllJobs,onNewJob,onDirectory,onEm
 
       {/* ── My Tasks ── */}
       {userName&&(()=>{
-        const myTasks=tasks
-          .filter(t=>(t.myTasks||[]).includes(userName)&&t.approval!=="Approved")
+        // myTasks entries are [{name,note}] or legacy strings
+        const myEntries=tasks
+          .filter(t=>t.approval!=="Approved")
+          .map(t=>{
+            const entries=(t.myTasks||[]).map(e=>typeof e==="string"?{name:e,note:""}:e);
+            const mine=entries.find(e=>e.name===userName);
+            return mine?{task:t,note:mine.note}:null;
+          })
+          .filter(Boolean)
           .sort((a,b)=>{
-            const aOver=a.dueDate&&a.dueDate<today()?0:1;
-            const bOver=b.dueDate&&b.dueDate<today()?0:1;
-            if(aOver!==bOver) return aOver-bOver;
-            return (a.dueDate||"9999").localeCompare(b.dueDate||"9999");
+            const aO=a.task.dueDate&&a.task.dueDate<today()?0:1;
+            const bO=b.task.dueDate&&b.task.dueDate<today()?0:1;
+            if(aO!==bO) return aO-bO;
+            return (a.task.dueDate||"9999").localeCompare(b.task.dueDate||"9999");
           });
-        const overdueMy=myTasks.filter(t=>t.dueDate&&t.dueDate<today()).length;
+        const overdueMy=myEntries.filter(({task:t})=>t.dueDate&&t.dueDate<today()).length;
         return(
           <div style={{marginBottom:18,background:C.card,border:`1.5px solid ${C.gold}`,borderRadius:12,overflow:"hidden"}}>
-            {/* Header */}
             <div style={{padding:"12px 16px",background:"#FFFBF0",borderBottom:`1px solid ${C.line}`,display:"flex",alignItems:"center",gap:10}}>
               <span style={{fontSize:18}}>📋</span>
               <div style={{flex:1}}>
                 <div style={{...DISP,fontSize:18,fontWeight:600,color:C.ink}}>My Tasks</div>
                 <div style={{fontSize:12,color:C.taupe,marginTop:1}}>
-                  {myTasks.length===0?"No open tasks assigned to you":`${myTasks.length} open task${myTasks.length!==1?"s":""}`}
+                  {myEntries.length===0?"No open tasks assigned to you":`${myEntries.length} open task${myEntries.length!==1?"s":""}`}
                   {overdueMy>0&&<span style={{color:C.rust,fontWeight:700,marginLeft:8}}>· {overdueMy} overdue</span>}
                 </div>
               </div>
             </div>
-            {/* Task rows */}
-            {myTasks.length===0?(
+            {myEntries.length===0?(
               <div style={{padding:"18px 16px",fontSize:13,color:C.stone,textAlign:"center"}}>
-                Tasks you assign to yourself will appear here. When creating a punch item, toggle "Add to My Tasks".
+                Tasks you assign to yourself will appear here. Add yourself when creating or editing a punch item.
               </div>
             ):(
-              <div style={{padding:"10px 12px",display:"grid",gap:6}}>
-                {myTasks.map(t=>{
+              <div style={{padding:"10px 12px",display:"grid",gap:7}}>
+                {myEntries.map(({task:t,note})=>{
                   const overdue=t.dueDate&&t.dueDate<today();
                   const isRej=t.approval==="Rejected";
                   return(
                     <div key={t.id} onClick={()=>onOpenMyTask(t.id)}
-                      style={{display:"flex",alignItems:"center",gap:12,padding:"10px 12px",borderRadius:9,
-                        border:`1px solid ${isRej?"#F5C6C2":overdue?"#F5C6C2":C.line}`,
-                        background:isRej?"#FEF6F5":overdue?"#FFF8F8":"#fff",cursor:"pointer"}}>
-                      {/* Priority dot */}
-                      <div style={{width:8,height:8,borderRadius:"50%",background:PRI_FG[t.priority]||C.taupe,flexShrink:0}}/>
-                      {/* Main content */}
-                      <div style={{flex:1,minWidth:0}}>
-                        <div style={{fontWeight:600,fontSize:13,color:isRej?C.rust:C.ink,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
-                          {isRej&&<span style={{marginRight:5}}>✗</span>}{t.description}
+                      style={{borderRadius:9,border:`1px solid ${isRej?"#F5C6C2":overdue?"#F5C6C2":C.line}`,
+                        background:isRej?"#FEF6F5":overdue?"#FFF8F8":"#fff",cursor:"pointer",overflow:"hidden"}}>
+                      {/* Task link row */}
+                      <div style={{display:"flex",alignItems:"center",gap:10,padding:"9px 12px 7px"}}>
+                        <div style={{width:8,height:8,borderRadius:"50%",background:PRI_FG[t.priority]||C.taupe,flexShrink:0}}/>
+                        <div style={{flex:1,minWidth:0}}>
+                          <div style={{fontWeight:700,fontSize:13,color:isRej?C.rust:C.ink,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+                            {isRej&&"✗ "}{t.description}
+                          </div>
+                          <div style={{fontSize:11,color:C.taupe,marginTop:1}}>{t.project} · {t.area}</div>
                         </div>
-                        <div style={{fontSize:11.5,color:C.taupe,marginTop:2}}>{t.project} · {t.area}</div>
+                        <div style={{textAlign:"right",flexShrink:0,display:"flex",flexDirection:"column",alignItems:"flex-end",gap:2}}>
+                          <StatusChip status={t.status}/>
+                          {t.dueDate&&<div style={{fontSize:11,color:overdue?C.rust:C.stone,fontWeight:overdue?700:400}}>{fmtDate(t.dueDate)}{overdue?" ⚠":""}</div>}
+                        </div>
                       </div>
-                      {/* Right side */}
-                      <div style={{textAlign:"right",flexShrink:0,display:"flex",flexDirection:"column",alignItems:"flex-end",gap:3}}>
-                        <StatusChip status={t.status}/>
-                        {t.dueDate&&<div style={{fontSize:11.5,color:overdue?C.rust:C.stone,fontWeight:overdue?700:400}}>{fmtDate(t.dueDate)}{overdue?" ⚠":""}</div>}
-                      </div>
+                      {/* My note for this task */}
+                      {note&&<div style={{margin:"0 12px 9px",padding:"7px 10px",background:"#FFFBF0",borderRadius:6,fontSize:12.5,color:C.ink,borderLeft:`3px solid ${C.gold}`,lineHeight:1.5}}>
+                        <span style={{...CAPT,fontSize:9,color:C.gold,fontWeight:700,marginRight:6}}>My note</span>{note}
+                      </div>}
                     </div>
                   );
                 })}
@@ -2000,28 +2008,17 @@ function TaskDetail({taskId,tasks:allTasks,userName,loadPhoto,savePhoto,requestA
           {(task.photos||[]).length>0&&<div style={{fontSize:12,color:C.stone,marginTop:6}}>Tap any photo to enlarge.</div>}
         </TaskSection>
 
-        {/* My Tasks — assign internal team members */}
-        <TaskSection title="Assigned to Team Members">
-          <div style={{marginBottom:10}}>
-            <div style={{fontSize:13,color:C.taupe,marginBottom:10}}>Tag team members who have action items on this task. Shows on their dashboard under My Tasks.</div>
-            {(teamMembers||[]).length===0?(
-              <div style={{fontSize:13,color:C.stone}}>No team members configured. Add team members in the Trade Directory.</div>
-            ):(
-              <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-                {(teamMembers||[]).map(m=>{
-                  const assigned=(task.myTasks||[]).includes(m.name);
-                  return(
-                    <button key={m.id} onClick={()=>{
-                      const cur=task.myTasks||[];
-                      onUpdate({myTasks: assigned ? cur.filter(n=>n!==m.name) : [...cur,m.name]});
-                    }} style={{padding:"7px 13px",borderRadius:20,border:`1.5px solid ${assigned?accent:C.line}`,background:assigned?accent+"22":"#fff",color:assigned?C.ink:C.taupe,fontSize:13,fontWeight:assigned?700:400,cursor:"pointer",transition:"all 0.1s"}}>
-                      {assigned?"✓ ":""}{m.name}
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-          </div>
+        {/* My Tasks — assign with notes */}
+        <TaskSection title="My Tasks — Internal Assignments">
+          <MyTasksPanel
+            entries={(task.myTasks||[]).map(e=>typeof e==="string"?{name:e,note:""}:e)}
+            teamMembers={[
+              ...(userName?[{id:"__self__",name:userName}]:[]),
+              ...(teamMembers||[]).filter(m=>m.name!==userName),
+            ]}
+            accent={accent}
+            onChange={entries=>onUpdate({myTasks:entries})}
+          />
         </TaskSection>
 
         {/* Notes & Comments */}
@@ -2104,7 +2101,7 @@ function NewJobModal({onCancel,onCreate}){
 
 function NewTaskModal({userName,lockedProject,projects,companies,trades,savePhoto,requestAnnotate,onCancel,onCreate,teamMembers=[]}){
   const [f,setF]=useState({project:lockedProject||projects[0]?.name||"",area:"",description:"",trades:[],priority:"Medium",dueDate:today()});
-  const [myTaskAssign,setMyTaskAssign]=useState(userName?[userName]:[]);
+  const [myTaskAssign,setMyTaskAssign]=useState(userName?[{name:userName,note:""}]:[]);
   const [photos,setPhotos]=useState([]); const [creating,setCreating]=useState(false); const fileRef=useRef();
   const set=k=>e=>setF({...f,[k]:e.target.value});
   const ok=f.project&&f.area&&f.description&&f.trades.length>0;
@@ -2160,23 +2157,18 @@ function NewTaskModal({userName,lockedProject,projects,companies,trades,savePhot
     {/* My Tasks assignment */}
     {assignableMembers.length>0&&(
       <div style={{marginTop:14,padding:"13px 14px",background:"#FFFBF0",border:`1.5px solid ${accent}`,borderRadius:10}}>
-        <div style={{display:"flex",alignItems:"center",gap:7,marginBottom:10}}>
+        <div style={{display:"flex",alignItems:"center",gap:7,marginBottom:12}}>
           <span style={{fontSize:14}}>📋</span>
-          <div style={{...CAPT,fontSize:10,fontWeight:700,color:C.taupe}}>Add to My Tasks</div>
-          <span style={{fontSize:12,color:C.stone,fontWeight:400}}>— appears on dashboard</span>
+          <div style={{...CAPT,fontSize:10,fontWeight:700,color:C.taupe}}>My Tasks</div>
+          <span style={{fontSize:12,color:C.stone,fontWeight:400}}>— add yourself or team members with notes</span>
         </div>
-        <div style={{display:"flex",gap:7,flexWrap:"wrap"}}>
-          {assignableMembers.map(m=>{
-            const active=myTaskAssign.includes(m.name);
-            return(
-              <button key={m.id} onClick={()=>toggleAssign(m.name)}
-                style={{padding:"7px 13px",borderRadius:20,border:`1.5px solid ${active?accent:C.line}`,background:active?accent:"#fff",color:active?"#2E2B28":C.taupe,fontSize:13,fontWeight:active?700:400,cursor:"pointer"}}>
-                {active?"✓ ":""}{m.name=== userName?"Me ("+userName+")":m.name}
-              </button>
-            );
-          })}
-        </div>
-        {myTaskAssign.length>0&&<div style={{fontSize:11.5,color:C.taupe,marginTop:7}}>This task will appear under My Tasks on the dashboard for: <b style={{color:C.ink}}>{myTaskAssign.join(", ")}</b></div>}
+        <MyTasksPanel
+          entries={myTaskAssign}
+          teamMembers={assignableMembers}
+          accent={accent}
+          onChange={setMyTaskAssign}
+          compact
+        />
       </div>
     )}
 
@@ -2677,6 +2669,115 @@ function EmailAllModal({job,tasks,emailMap,loadPhoto,onClose}){
       <Btn kind="ghost" onClick={onClose}>Done</Btn>
     </div>
   </div></Modal>);
+}
+
+/* ── MyTasksPanel — assign people with personal action notes ── */
+function MyTasksPanel({entries=[], teamMembers=[], accent, onChange, compact=false}){
+  // entries: [{name, note}]
+  const [addingName, setAddingName] = useState("");
+  const [addingNote, setAddingNote] = useState("");
+  const [editingIdx, setEditingIdx] = useState(null);
+  const [editNote,   setEditNote]   = useState("");
+
+  const assigned = entries.map(e=>e.name);
+  const available = teamMembers.filter(m=>!assigned.includes(m.name));
+
+  const add = () => {
+    if(!addingName) return;
+    onChange([...entries, {name:addingName, note:addingNote.trim()}]);
+    setAddingName(""); setAddingNote("");
+  };
+
+  const remove = idx => onChange(entries.filter((_,i)=>i!==idx));
+
+  const saveEdit = idx => {
+    const next = entries.map((e,i)=>i===idx?{...e,note:editNote}:e);
+    onChange(next); setEditingIdx(null);
+  };
+
+  const startEdit = (idx) => { setEditingIdx(idx); setEditNote(entries[idx].note||""); };
+
+  return(
+    <div>
+      {/* Existing assignments */}
+      {entries.length>0&&(
+        <div style={{display:"grid",gap:8,marginBottom:12}}>
+          {entries.map((e,i)=>(
+            <div key={i} style={{background:"#fff",border:`1px solid ${accent}22`,borderRadius:9,overflow:"hidden"}}>
+              {/* Person header */}
+              <div style={{display:"flex",alignItems:"center",gap:8,padding:"8px 12px",background:accent+"11",borderBottom:editingIdx===i?`1px solid ${accent}22`:"none"}}>
+                <span style={{fontSize:14}}>👤</span>
+                <span style={{fontWeight:700,fontSize:13,flex:1,color:"#1C1A18"}}>{e.name}</span>
+                <button onClick={()=>startEdit(i)} style={{background:"none",border:"none",fontSize:12,color:"#8A8279",cursor:"pointer",padding:"2px 6px"}}>✏ Edit note</button>
+                <button onClick={()=>remove(i)} style={{background:"none",border:"none",fontSize:16,color:"#8A8279",cursor:"pointer",lineHeight:1,padding:"2px 4px"}}>×</button>
+              </div>
+              {/* Note area */}
+              {editingIdx===i?(
+                <div style={{padding:"8px 12px"}}>
+                  <textarea
+                    value={editNote}
+                    onChange={e=>setEditNote(e.target.value)}
+                    rows={2}
+                    placeholder="What do you need to do on this task?"
+                    autoFocus
+                    style={{width:"100%",boxSizing:"border-box",padding:"8px 10px",fontSize:13,borderRadius:7,border:`1px solid ${accent}`,resize:"vertical",lineHeight:1.5,fontFamily:"inherit"}}
+                  />
+                  <div style={{display:"flex",gap:7,marginTop:6,justifyContent:"flex-end"}}>
+                    <button onClick={()=>setEditingIdx(null)} style={{background:"none",border:`1px solid #E8E5E0`,borderRadius:6,padding:"5px 11px",fontSize:12,cursor:"pointer",color:"#8A8279"}}>Cancel</button>
+                    <button onClick={()=>saveEdit(i)} style={{background:accent,border:"none",borderRadius:6,padding:"5px 14px",fontSize:12,fontWeight:700,cursor:"pointer",color:"#2E2B28"}}>Save</button>
+                  </div>
+                </div>
+              ):(
+                <div style={{padding:"7px 12px 9px"}}>
+                  {e.note?(
+                    <div style={{fontSize:12.5,color:"#1C1A18",lineHeight:1.55,borderLeft:`3px solid ${accent}`,paddingLeft:8}}>{e.note}</div>
+                  ):(
+                    <div style={{fontSize:12,color:"#B5B0A8",fontStyle:"italic",cursor:"pointer"}} onClick={()=>startEdit(i)}>No note — tap Edit note to add what needs doing</div>
+                  )}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Add person */}
+      {available.length>0&&(
+        <div style={{background:"#fff",border:`1px dashed ${accent}`,borderRadius:9,padding:"10px 12px"}}>
+          <div style={{...{fontFamily:"Raleway,sans-serif",textTransform:"uppercase",letterSpacing:"0.08em"},fontSize:9.5,fontWeight:700,color:"#8A8279",marginBottom:8}}>Add person</div>
+          <div style={{display:"flex",gap:7,flexWrap:"wrap",marginBottom:available.length>0&&addingName?8:0}}>
+            {available.map(m=>(
+              <button key={m.id} onClick={()=>setAddingName(m.name)}
+                style={{padding:"6px 12px",borderRadius:20,border:`1.5px solid ${addingName===m.name?accent:"#E8E5E0"}`,
+                  background:addingName===m.name?accent+"22":"#fff",
+                  color:addingName===m.name?"#1C1A18":"#8A8279",
+                  fontSize:13,fontWeight:addingName===m.name?700:400,cursor:"pointer"}}>
+                {m.name}
+              </button>
+            ))}
+          </div>
+          {addingName&&(
+            <div style={{marginTop:8}}>
+              <textarea
+                value={addingNote}
+                onChange={e=>setAddingNote(e.target.value)}
+                rows={compact?2:3}
+                placeholder={`What does ${addingName} need to do on this task?`}
+                style={{width:"100%",boxSizing:"border-box",padding:"8px 10px",fontSize:13,borderRadius:7,border:`1px solid ${accent}`,resize:"vertical",lineHeight:1.5,fontFamily:"inherit",marginBottom:7}}
+              />
+              <div style={{display:"flex",gap:7,justifyContent:"flex-end"}}>
+                <button onClick={()=>{setAddingName("");setAddingNote("");}} style={{background:"none",border:`1px solid #E8E5E0`,borderRadius:6,padding:"6px 12px",fontSize:12,cursor:"pointer",color:"#8A8279"}}>Cancel</button>
+                <button onClick={add} style={{background:accent,border:"none",borderRadius:6,padding:"6px 16px",fontSize:12,fontWeight:700,cursor:"pointer",color:"#2E2B28"}}>Add to My Tasks</button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+      {entries.length===0&&available.length===0&&(
+        <div style={{fontSize:12.5,color:"#B5B0A8"}}>No team members configured. Add them in Trade Directory.</div>
+      )}
+    </div>
+  );
 }
 
 function TeamMembersEditor({members=[], onSave}){
