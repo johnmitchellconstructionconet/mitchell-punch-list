@@ -1,262 +1,132 @@
-import { createClient } from "@supabase/supabase-js";
+/* ================================================================
+   SUPABASE DATABASE LAYER — Punch List System
+   All tables use RLS disabled (anon key has full access).
+   Tables: projects, tasks, companies, photos, settings
+   ================================================================ */
 
-const supabase = createClient(
-  import.meta.env.VITE_SUPABASE_URL,
-  import.meta.env.VITE_SUPABASE_ANON_KEY
-);
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
-export default supabase;
+if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+  console.error("Missing Supabase env vars. Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in .env");
+}
 
-// ─── Projects ────────────────────────────────────────────────────
+// ── Low-level fetch wrapper ──────────────────────────────────────
+async function sb(path, options = {}) {
+  const url = `${SUPABASE_URL}/rest/v1/${path}`;
+  const res = await fetch(url, {
+    ...options,
+    headers: {
+      "apikey": SUPABASE_ANON_KEY,
+      "Authorization": `Bearer ${SUPABASE_ANON_KEY}`,
+      "Content-Type": "application/json",
+      "Prefer": "return=representation",
+      ...(options.headers || {}),
+    },
+  });
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(`Supabase error ${res.status}: ${err}`);
+  }
+  const text = await res.text();
+  return text ? JSON.parse(text) : [];
+}
 
+// ── PROJECTS ────────────────────────────────────────────────────
 export async function getProjects() {
-  const { data, error } = await supabase
-    .from("projects")
-    .select("*")
-    .order("created_at", { ascending: false });
-  if (error) { console.error("getProjects", error); return []; }
-  return data.map(dbToProject);
+  return sb("projects?order=created_at.desc");
 }
 
 export async function upsertProject(project) {
-  const { error } = await supabase
-    .from("projects")
-    .upsert(projectToDb(project), { onConflict: "id" });
-  if (error) console.error("upsertProject", error);
+  return sb("projects?on_conflict=id", {
+    method: "POST",
+    headers: { "Prefer": "resolution=merge-duplicates,return=representation" },
+    body: JSON.stringify(project),
+  });
 }
 
 export async function deleteProject(id) {
-  const { error } = await supabase.from("projects").delete().eq("id", id);
-  if (error) console.error("deleteProject", error);
+  return sb(`projects?id=eq.${id}`, { method: "DELETE" });
 }
 
-// ─── Tasks ───────────────────────────────────────────────────────
-
+// ── TASKS ───────────────────────────────────────────────────────
 export async function getTasks() {
-  const { data, error } = await supabase
-    .from("tasks")
-    .select("*")
-    .order("created_at", { ascending: false });
-  if (error) { console.error("getTasks", error); return []; }
-  return data.map(dbToTask);
+  return sb("tasks?order=created_at.desc");
 }
 
 export async function upsertTask(task) {
-  const payload = taskToDb(task);
-
-  // First try UPDATE (works for existing rows even with strict RLS)
-  const { data: updateData, error: updateError } = await supabase
-    .from("tasks")
-    .update(payload)
-    .eq("id", payload.id)
-    .select("id");
-
-  if (updateError) {
-    console.error("upsertTask UPDATE failed:", JSON.stringify(updateError));
-    // Fall back to INSERT for brand-new tasks
-    const { error: insertError } = await supabase
-      .from("tasks")
-      .insert(payload);
-    if (insertError) {
-      console.error("upsertTask INSERT also failed:", JSON.stringify(insertError));
-      throw new Error(insertError.message || JSON.stringify(insertError));
-    }
-    return;
-  }
-
-  // If update matched 0 rows it's a new task — insert it
-  if (!updateData || updateData.length === 0) {
-    const { error: insertError } = await supabase
-      .from("tasks")
-      .insert(payload);
-    if (insertError) {
-      console.error("upsertTask INSERT (new task) failed:", JSON.stringify(insertError));
-      throw new Error(insertError.message || JSON.stringify(insertError));
-    }
-  }
-}
-
-// Direct update — used by RejectionPanel to bypass React state chain
-export async function updateTask(task) {
-  const payload = taskToDb(task);
-  const { error } = await supabase
-    .from("tasks")
-    .update(payload)
-    .eq("id", task.id);
-  if (error) console.error("updateTask error:", JSON.stringify(error));
-  return !error;
+  // Supabase can't store JS undefined — strip them out
+  const clean = JSON.parse(JSON.stringify(task));
+  return sb("tasks?on_conflict=id", {
+    method: "POST",
+    headers: { "Prefer": "resolution=merge-duplicates,return=representation" },
+    body: JSON.stringify(clean),
+  });
 }
 
 export async function deleteTask(id) {
-  const { error } = await supabase.from("tasks").delete().eq("id", id);
-  if (error) console.error("deleteTask", error);
+  return sb(`tasks?id=eq.${id}`, { method: "DELETE" });
 }
 
-// ─── Companies ───────────────────────────────────────────────────
-
+// ── COMPANIES (Trade Directory) ──────────────────────────────────
 export async function getCompanies() {
-  const { data, error } = await supabase
-    .from("companies")
-    .select("*")
-    .order("name", { ascending: true });
-  if (error) { console.error("getCompanies", error); return []; }
-  return data.map(dbToCompany);
+  return sb("companies?order=name.asc");
 }
 
 export async function upsertCompany(company) {
-  const { error } = await supabase
-    .from("companies")
-    .upsert(companyToDb(company), { onConflict: "id" });
-  if (error) console.error("upsertCompany", error);
+  return sb("companies?on_conflict=id", {
+    method: "POST",
+    headers: { "Prefer": "resolution=merge-duplicates,return=representation" },
+    body: JSON.stringify(company),
+  });
 }
 
 export async function deleteCompany(id) {
-  const { error } = await supabase.from("companies").delete().eq("id", id);
-  if (error) console.error("deleteCompany", error);
+  return sb(`companies?id=eq.${id}`, { method: "DELETE" });
 }
 
-// ─── Photos ──────────────────────────────────────────────────────
+// ── PHOTOS ──────────────────────────────────────────────────────
+// Photos are stored as base64 strings in a key-value table.
+// Table schema: id (text PK), data (text)
 
 export async function getPhoto(id) {
-  const { data, error } = await supabase
-    .from("photos")
-    .select("data")
-    .eq("id", id)
-    .single();
-  if (error) return null;
-  return data?.data || null;
+  const rows = await sb(`photos?id=eq.${encodeURIComponent(id)}&select=data`);
+  return rows?.[0]?.data ?? null;
 }
 
 export async function savePhoto(id, dataUrl) {
-  const { error } = await supabase
-    .from("photos")
-    .upsert({ id, data: dataUrl }, { onConflict: "id" });
-  if (error) console.error("savePhoto", error);
+  return sb("photos?on_conflict=id", {
+    method: "POST",
+    headers: { "Prefer": "resolution=merge-duplicates,return=representation" },
+    body: JSON.stringify({ id, data: dataUrl }),
+  });
 }
 
-// ─── Settings (team code + company settings) ─────────────────────
+// ── SETTINGS ────────────────────────────────────────────────────
+// Settings are stored as key-value pairs.
+// Table schema: key (text PK), value (text)
 
 export async function getSetting(key) {
-  const { data, error } = await supabase
-    .from("settings")
-    .select("value")
-    .eq("key", key)
-    .single();
-  if (error) return null;
-  return data?.value || null;
+  const rows = await sb(`settings?key=eq.${encodeURIComponent(key)}&select=value`);
+  return rows?.[0]?.value ?? null;
 }
 
 export async function setSetting(key, value) {
-  const { error } = await supabase
-    .from("settings")
-    .upsert({ key, value }, { onConflict: "key" });
-  if (error) console.error("setSetting", error);
+  return sb("settings?on_conflict=key", {
+    method: "POST",
+    headers: { "Prefer": "resolution=merge-duplicates,return=representation" },
+    body: JSON.stringify({ key, value }),
+  });
 }
 
-// ─── Wipe everything ─────────────────────────────────────────────
-
+// ── WIPE ALL ────────────────────────────────────────────────────
+// Nuclear option — deletes everything. Called from the Danger Zone in Trade Directory.
 export async function wipeAll() {
   await Promise.all([
-    supabase.from("tasks").delete().neq("id", ""),
-    supabase.from("projects").delete().neq("id", ""),
-    supabase.from("companies").delete().neq("id", ""),
-    supabase.from("photos").delete().neq("id", ""),
-    supabase.from("settings").delete().neq("key", ""),
+    sb("tasks?id=neq.00000000", { method: "DELETE" }),
+    sb("projects?id=neq.00000000", { method: "DELETE" }),
+    sb("companies?id=neq.00000000", { method: "DELETE" }),
+    sb("photos?id=neq.placeholder", { method: "DELETE" }),
+    sb("settings?key=neq.placeholder", { method: "DELETE" }),
   ]);
-}
-
-// ─── DB row ↔ app object mappers ─────────────────────────────────
-
-function dbToProject(r) {
-  return {
-    id:          r.id,
-    name:        r.name,
-    client:      r.client       || "",
-    address:     r.address      || "",
-    siteContact: r.site_contact || "",
-    sitePhone:   r.site_phone   || "",
-    status:      r.status       || "Active",
-    createdAt:   r.created_at,
-  };
-}
-
-function projectToDb(p) {
-  return {
-    id:           p.id,
-    name:         p.name,
-    client:       p.client      || "",
-    address:      p.address     || "",
-    site_contact: p.siteContact || "",
-    site_phone:   p.sitePhone   || "",
-    status:       p.status      || "Active",
-    created_at:   p.createdAt,
-  };
-}
-
-function dbToTask(r) {
-  return {
-    id:            r.id,
-    project:       r.project,
-    area:          r.area,
-    description:   r.description,
-    trade:         r.trade,
-    priority:      r.priority,
-    dueDate:       r.due_date,
-    status:        r.status         || "Reported",
-    approval:      r.approval       || "Pending",
-    photos:        r.photos         || [],
-    comments:      r.comments       || [],
-    statusHistory: r.status_history || [],
-    createdBy:     r.created_by,
-    createdAt:     r.created_at,
-    approvedBy:    r.approved_by,
-    approvedAt:    r.approved_at,
-    mentions:      r.mentions       || [],
-  };
-}
-
-function taskToDb(t) {
-  return {
-    id:             t.id,
-    project:        t.project,
-    area:           t.area,
-    description:    t.description,
-    trade:          t.trade,
-    priority:       t.priority,
-    due_date:       t.dueDate,
-    status:         t.status        || "Reported",
-    approval:       t.approval      || "Pending",
-    photos:         t.photos        || [],
-    comments:       t.comments      || [],
-    status_history: t.statusHistory || [],
-    created_by:     t.createdBy,
-    created_at:     t.createdAt,
-    approved_by:    t.approvedBy    || null,
-    approved_at:    t.approvedAt    || null,
-    mentions:       t.mentions      || [],
-  };
-}
-
-function dbToCompany(r) {
-  return {
-    id:          r.id,
-    name:        r.name,
-    tradeType:   r.trade_type   || "",
-    contactName: r.contact_name || "",
-    email:       r.email        || "",
-    phone:       r.phone        || "",
-    createdAt:   r.created_at,
-  };
-}
-
-function companyToDb(c) {
-  return {
-    id:           c.id,
-    name:         c.name,
-    trade_type:   c.tradeType   || "",
-    contact_name: c.contactName || "",
-    email:        c.email       || "",
-    phone:        c.phone       || "",
-    created_at:   c.createdAt,
-  };
 }
