@@ -606,16 +606,21 @@ function InternalApp() {
 
   const loadAll = useCallback(async()=>{
     setSyncing(true);
-    const [p, t, c, tc, cs, tm] = await Promise.all([
-      getProjects(), getTasks(), getCompanies(),
-      getSetting("teamcode"), getSetting("cosettings"), getSetting("teammembers"),
-    ]);
-    setProjects(p);
-    setTasks(t);
-    setCompanies(c);
-    setTeamCode(tc||"");
-    if(cs) { try { setCoSettings(s=>({...s,...JSON.parse(cs)})); } catch {} }
-    if(tm) { try { setTeamMembers(JSON.parse(tm)); } catch {} }
+    try {
+      const [p, t, c, tc, cs, tm] = await Promise.all([
+        getProjects(), getTasks(), getCompanies(),
+        getSetting("teamcode"), getSetting("cosettings"), getSetting("teammembers"),
+      ]);
+      setProjects(p);
+      setTasks(t);
+      setCompanies(c);
+      setTeamCode(tc||"");
+      if(cs) { try { setCoSettings(s=>({...s,...JSON.parse(cs)})); } catch {} }
+      if(tm) { try { setTeamMembers(JSON.parse(tm)); } catch {} }
+    } catch(e) {
+      console.error("loadAll failed:", e);
+      // Still mark loaded so the UI shows — user can manually refresh
+    }
     setSyncing(false); setLoaded(true);
   },[]);
 
@@ -624,11 +629,12 @@ function InternalApp() {
   // so by the time the user types their name and clicks Sign In, data is ready.
   useEffect(()=>{ loadAll(); },[loadAll]);
 
-  // ── Auto-login: remember the user across sessions ──
+  // ── Auto-login: restore saved user once data is ready ──
   useEffect(()=>{
+    if(!loaded) return; // wait for data first
     const saved = localStorage.getItem("snaglist_user");
     if(saved) { setUser(saved); setAuthed(true); }
-  },[]);
+  },[loaded]);
 
   // ── Persist helpers ──
   const addProject = async (proj) => {
@@ -742,21 +748,16 @@ function InternalApp() {
 
   if(!authed) return <Shell><InternalLogin loadCode={loadCode} onAuth={name=>{localStorage.setItem("snaglist_user",name);setUser(name);setAuthed(true);}}/></Shell>;
   if(!loaded) return (
-    <CompanyCtx.Provider value={coSettings}>
     <Shell>
-      <InternalHeader userName={user} syncing={true} onSync={()=>{}} mentionCount={0} onMentions={()=>{}} onSignOut={()=>{localStorage.removeItem("snaglist_user");setAuthed(false);setUser(null);setLoaded(false);}}/>
-      <div style={{padding:"32px 20px",maxWidth:900,margin:"0 auto"}}>
-        {/* Skeleton cards */}
-        {[1,2,3].map(i=>(
-          <div key={i} style={{background:C.card,borderRadius:12,marginBottom:14,padding:"20px 18px",border:`1px solid ${C.line}`}}>
-            <div style={{width:`${60+i*10}%`,height:14,background:C.line,borderRadius:4,marginBottom:10,animation:"pulse 1.2s ease-in-out infinite"}}/>
-            <div style={{width:"40%",height:10,background:C.mist,borderRadius:4}}/>
-          </div>
-        ))}
-        <style>{`@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}}`}</style>
+      <div style={{minHeight:"100vh",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:16,background:C.paper}}>
+        <Wordmark size={36} loginScreen/>
+        <div style={{fontSize:14,color:C.taupe,fontFamily:"Raleway,sans-serif"}}>Loading your data…</div>
+        <div style={{width:180,height:3,background:C.line,borderRadius:2,overflow:"hidden"}}>
+          <div style={{width:"60%",height:"100%",background:C.navy,borderRadius:2,animation:"slideload 1.4s ease-in-out infinite"}}/>
+        </div>
+        <style>{`@keyframes slideload{0%{transform:translateX(-100%)}100%{transform:translateX(280%)}}`}</style>
       </div>
     </Shell>
-    </CompanyCtx.Provider>
   );
 
   return(
@@ -1153,7 +1154,8 @@ function Modal({children,onClose,wide,xwide}){
 }
 
 function InternalLogin({loadCode,onAuth}){
-  const [name,setName]=useState(""); const [code,setCode]=useState(""); const [err,setErr]=useState("");
+  const [name,setName]=useState(()=>localStorage.getItem("snaglist_user")||"");
+  const [code,setCode]=useState(""); const [err,setErr]=useState("");
   const enter=async()=>{
     if(!name.trim())return; setErr("");
     const tc=await loadCode();
