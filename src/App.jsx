@@ -9,7 +9,7 @@ import {
 } from "./supabase.js";
 
 /* ================================================================
-   PUNCH LIST SYSTEM — White-label, company-configurable
+   SNAGLIST — White-label construction SnagList
    Supabase-backed persistent storage
    ================================================================ */
 
@@ -55,17 +55,18 @@ function printHTML(html) {
 const DEFAULT_SETTINGS = {
   name: "", tagline: "", address: "", city: "", state: "", zip: "",
   phone: "", email: "", website: "", license: "",
-  accentColor: "#BBA270", logoUrl: "",
+  accentColor: "#1E2336", logoUrl: "",
 };
 
 const CompanyCtx = React.createContext(DEFAULT_SETTINGS);
 const useCompany = () => React.useContext(CompanyCtx);
 
 const C = {
-  ink: "#1C1A18", paper: "#FAFAF8", card: "#FFFFFF",
-  line: "#E8E5E0", lineHvy: "#CCC8C2", taupe: "#8A8279",
-  gold: "#BBA270", goldDark: "#8F7427", stone: "#B5B0A8",
-  sage: "#6E9964", rust: "#B04035", amber: "#B08A2E", mist: "#F2F0EC",
+  ink:     "#1E2336", paper: "#F8F8F7", card: "#FFFFFF",
+  line:    "#E4E2DD", lineHvy: "#C8C4BC", taupe: "#9B8E7E",
+  gold:    "#9B8E7E", goldDark: "#7A6E60", stone: "#B5AFA7",
+  sage:    "#4E7C5F", rust: "#B04035", amber: "#9B7E3A", mist: "#F2F0EC",
+  navy:    "#1E2336", navyLight: "#2E3550",
 };
 
 const STATUS_META = {
@@ -225,7 +226,7 @@ function JobLinkApp({ jobId }) {
       body+=`</tbody></table>`;
     }
     const tradeLabel=activeFilter!=="All"?` — ${activeFilter}`:"";
-    const html=`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Punch List — ${esc(project.name)}</title>
+    const html=`<!DOCTYPE html><html><head><meta charset="utf-8"><title>SnagList — ${esc(project.name)}</title>
 <style>@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Raleway:wght@400;500;600&display=swap');
 body{font-family:Raleway,sans-serif;color:#1C1A18;max-width:860px;margin:0 auto;padding:32px 24px}
 .hdr{display:flex;justify-content:space-between;border-bottom:3px solid #1C1A18;padding-bottom:12px;margin-bottom:20px}
@@ -319,7 +320,7 @@ ${body}
           <p style={{fontSize:12.5,color:C.stone,marginTop:10,marginBottom:0}}>
             {activeFilter!=="All"
               ? <span>Showing <b style={{color:C.ink}}>{activeFilter}</b> items only</span>
-              : "Read-only view. Contact your project manager with questions."
+              : "Read-only view — SnagList. Contact your project manager with questions."
             }
           </p>
           </div>
@@ -551,7 +552,7 @@ function PubTaskDetail({task,project,loadPhoto,onLightbox,onClose,onUpdate,trade
           {/* Link */}
           <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,padding:"12px 14px",background:C.mist,borderRadius:9,border:`1px solid ${C.line}`}}>
             <div>
-              <div style={{...CAPT,fontSize:9.5,fontWeight:700,color:C.stone,marginBottom:2}}>Job punch list link</div>
+              <div style={{...CAPT,fontSize:9.5,fontWeight:700,color:C.stone,marginBottom:2}}>Job snag list link</div>
               <div style={{fontSize:12,color:C.taupe,maxWidth:340,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{jobUrl}</div>
             </div>
             <button onClick={()=>{try{navigator.clipboard.writeText(jobUrl);window.alert("Link copied!");}catch{window.alert(jobUrl);}}}
@@ -839,7 +840,7 @@ function InternalApp() {
 }
 
 /* ================================================================ DESIGN PRIMITIVES */
-const DISP = {fontFamily:"'TAN Garland','Cormorant Garamond',Georgia,serif",letterSpacing:"0.01em"};
+const DISP = {fontFamily:"Raleway,system-ui,sans-serif",fontWeight:600,letterSpacing:"-0.01em"};
 const CAPT = {fontFamily:"Raleway,sans-serif",textTransform:"uppercase",letterSpacing:"0.08em"};
 
 function Shell({children}){
@@ -861,29 +862,31 @@ function Shell({children}){
   );
 }
 
-function Wordmark({size=32,forceText}){
+function Wordmark({size=32,forceText,darkBg=false}){
   const co=useCompany();
-  const c=C.taupe;
+  // If the customer has uploaded a logo, always show it
   if(co.logoUrl&&!forceText){
     return <img src={co.logoUrl} alt={co.name} style={{height:size*1.4,maxWidth:size*6,objectFit:"contain",display:"block"}}/>;
   }
-  const words=(co.name||"Punch List").trim().split(/\s+/);
-  const first=words[0]||"";
-  const rest=words.slice(1).join(" ");
+  // SnagList system brand — shown when no customer logo is set
+  const s=size;
   return(
-    <div style={{lineHeight:1,display:"inline-block"}}>
-      <div style={{whiteSpace:"nowrap",fontStyle:"italic"}}>
-        <span style={{fontFamily:"'Sacramento',cursive",fontSize:size*1.25,color:c}}>{first.charAt(0)}</span>
-        <span style={{fontFamily:"'Allura',cursive",fontSize:size,color:c}}>{first.slice(1)}{rest?" ":""}</span>
-        {rest&&<span style={{fontFamily:"'Allura',cursive",fontSize:size*0.85,color:c}}>{rest}</span>}
+    <div style={{display:"inline-flex",alignItems:"center",gap:Math.round(s*0.35),lineHeight:1,userSelect:"none"}}>
+      {/* Icon: two interlocking hexagon-ish brackets with checkmark, mirroring the logo */}
+      <svg width={Math.round(s*1.1)} height={Math.round(s*1.1)} viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+        {/* Top-left dark shape */}
+        <path d="M8 16 L16 8 L32 8 L40 16" stroke="#1E2336" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round" fill="none"/>
+        <path d="M8 16 L8 28" stroke="#1E2336" strokeWidth="3.5" strokeLinecap="round" fill="none"/>
+        {/* Checkmark */}
+        <path d="M17 25 L22 31 L31 19" stroke="#9B8E7E" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" fill="none"/>
+        {/* Bottom-right taupe shape */}
+        <path d="M40 32 L32 40 L16 40 L8 32" stroke="#9B8E7E" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round" fill="none"/>
+        <path d="M40 20 L40 32" stroke="#9B8E7E" strokeWidth="3.5" strokeLinecap="round" fill="none"/>
+      </svg>
+      {/* Wordmark: "Snag" bold, "List" light — adapt to background */}
+      <div style={{fontFamily:"Raleway,system-ui,sans-serif",fontWeight:300,letterSpacing:"-0.01em",whiteSpace:"nowrap"}}>
+        <span style={{fontSize:s,color:darkBg?"#FFFFFF":"#1E2336",fontWeight:600}}>Snag</span><span style={{fontSize:s,color:darkBg?"rgba(255,255,255,0.55)":"#9B8E7E",fontWeight:300}}>List</span>
       </div>
-      {words.length>1&&(
-        <div style={{...CAPT,fontSize:Math.max(7,size*0.26),color:c,display:"flex",alignItems:"center",gap:5,marginTop:1}}>
-          <span style={{flex:1,height:1.5,background:c}}/>
-          <span style={{whiteSpace:"nowrap"}}>{words.slice(1).join(" ")}</span>
-          <span style={{flex:1,height:1.5,background:c}}/>
-        </div>
-      )}
     </div>
   );
 }
@@ -893,7 +896,7 @@ function Btn({kind="primary",children,...p}){
   const accent=co.accentColor||C.gold;
   const S={
     primary:{background:accent,color:"#2E2B28"},
-    dark:{background:C.ink,color:"#fff"},
+    dark:{background:C.navy,color:"#fff"},
     green:{background:C.sage,color:"#fff"},
     red:{background:C.rust,color:"#fff"},
     ghost:{background:"transparent",color:C.ink,border:`1px solid ${C.line}`},
@@ -1135,11 +1138,11 @@ function InternalLogin({loadCode,onAuth}){
     onAuth(name.trim());
   };
   return(
-    <div style={{minHeight:"100vh",background:"#F5F4F1",display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
-      <div style={{background:C.card,borderRadius:18,padding:"40px 36px",width:"100%",maxWidth:400,boxShadow:"0 8px 32px rgba(0,0,0,0.08)",border:`1px solid ${C.line}`}}>
+    <div style={{minHeight:"100vh",background:"#F0F1F5",display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+      <div style={{background:C.card,borderRadius:18,padding:"40px 36px",width:"100%",maxWidth:400,boxShadow:"0 8px 32px rgba(30,35,54,0.12)",border:`1px solid ${C.line}`,borderTop:`4px solid ${C.navy}`}}>
         <div style={{textAlign:"center",marginBottom:16}}><Wordmark size={38}/></div>
-        <div style={{...CAPT,fontSize:11,color:C.taupe,textAlign:"center",marginBottom:4}}>Internal Team Portal</div>
-        <h1 style={{...DISP,fontSize:34,fontWeight:600,margin:"0 0 22px",textAlign:"center",lineHeight:1}}>Sign In</h1>
+        <div style={{fontFamily:"Raleway,system-ui,sans-serif",fontSize:11,letterSpacing:"0.12em",textTransform:"uppercase",color:C.taupe,textAlign:"center",marginBottom:4,fontWeight:500}}>Internal Team Portal</div>
+        <h1 style={{fontFamily:"Raleway,system-ui,sans-serif",fontSize:30,fontWeight:300,letterSpacing:"0.02em",margin:"0 0 22px",textAlign:"center",lineHeight:1,color:C.navy}}>Sign In</h1>
         <Lbl>Your name</Lbl>
         <input value={name} onChange={e=>setName(e.target.value)} placeholder="First and last name" style={{marginBottom:13}} onKeyDown={e=>e.key==="Enter"&&name.trim()&&enter()}/>
         <Lbl>Team access code</Lbl>
@@ -1154,23 +1157,23 @@ function InternalLogin({loadCode,onAuth}){
 
 function InternalPortalLabel(){
   const co=useCompany();
-  return <div style={{...DISP,fontSize:19,fontWeight:600,color:C.taupe,borderLeft:`1px solid ${C.line}`,paddingLeft:12}}>{co.name?co.name+" — Punch List":"Punch List"}</div>;
+  return <div style={{fontFamily:"Raleway,system-ui,sans-serif",fontSize:16,fontWeight:400,color:"rgba(255,255,255,0.7)",borderLeft:"1px solid rgba(255,255,255,0.2)",paddingLeft:12}}>{co.name?co.name+" — SnagList":"SnagList"}</div>;
 }
 
 function InternalHeader({userName,syncing,onSync,onSignOut,mentionCount,onMentions}){
   return(
-    <div style={{background:C.card,borderBottom:`1px solid ${C.line}`,padding:"10px 16px",display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
-      <Wordmark size={28}/>
+    <div style={{background:C.navy,borderBottom:`1px solid ${C.navyLight}`,padding:"10px 16px",display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+      <Wordmark size={28} darkBg/>
       <InternalPortalLabel/>
       <div style={{flex:1}}/>
-      <div style={{textAlign:"right",fontSize:13,color:C.taupe}}>{userName}<div style={{...CAPT,fontSize:10,color:C.stone}}>Team</div></div>
+      <div style={{textAlign:"right",fontSize:13,color:"rgba(255,255,255,0.8)",fontWeight:500}}>{userName}<div style={{...CAPT,fontSize:10,color:"rgba(255,255,255,0.4)"}}>Team</div></div>
       {/* Bell icon */}
-      <button onClick={onMentions} style={{position:"relative",background:mentionCount>0?C.gold:"transparent",color:mentionCount>0?"#2E2B28":C.taupe,padding:"9px 11px",fontSize:16,border:`1px solid ${mentionCount>0?C.gold:C.line}`,borderRadius:8,cursor:"pointer"}} title="Mentions">
+      <button onClick={onMentions} style={{position:"relative",background:mentionCount>0?C.taupe:"transparent",color:mentionCount>0?"#fff":"rgba(255,255,255,0.6)",padding:"9px 11px",fontSize:16,border:mentionCount>0?"1px solid rgba(255,255,255,0.5)":"1px solid rgba(255,255,255,0.2)",borderRadius:8,cursor:"pointer"}} title="Mentions">
         🔔
         {mentionCount>0&&<span style={{position:"absolute",top:-5,right:-5,background:C.rust,color:"#fff",borderRadius:"50%",width:18,height:18,fontSize:10,fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center",lineHeight:1}}>{mentionCount>9?"9+":mentionCount}</span>}
       </button>
-      <button onClick={onSync} style={{background:C.mist,color:C.ink,padding:"9px 11px",fontSize:13,border:`1px solid ${C.line}`,borderRadius:8}}>{syncing?"Syncing…":"⟳"}</button>
-      <button onClick={onSignOut} style={{background:"transparent",color:C.taupe,padding:"9px 8px",fontSize:13,border:`1px solid ${C.line}`,borderRadius:8}}>Sign out</button>
+      <button onClick={onSync} style={{background:"rgba(255,255,255,0.1)",color:"rgba(255,255,255,0.8)",padding:"9px 11px",fontSize:13,border:"1px solid rgba(255,255,255,0.2)",borderRadius:8}}>{syncing?"Syncing…":"⟳"}</button>
+      <button onClick={onSignOut} style={{background:"transparent",color:"rgba(255,255,255,0.6)",padding:"9px 8px",fontSize:13,border:"1px solid rgba(255,255,255,0.2)",borderRadius:8}}>Sign out</button>
     </div>
   );
 }
@@ -1350,7 +1353,7 @@ function Dashboard({projects,tasks,onOpenJob,onAllJobs,onNewJob,onDirectory,onEm
         ))}
       </div>
 
-      {filtered.length===0&&<div style={{padding:40,textAlign:"center",color:C.taupe,background:C.card,borderRadius:12,border:`1px dashed ${C.line}`}}>{jobFilter==="Closed"?"No closed jobs.":"No jobs yet. Create your first job to start a punch list."}</div>}
+      {filtered.length===0&&<div style={{padding:40,textAlign:"center",color:C.taupe,background:C.card,borderRadius:12,border:`1px dashed ${C.line}`}}>{jobFilter==="Closed"?"No closed jobs.":"No jobs yet. Create your first job to start a snag list."}</div>}
       <div style={{display:"grid",gap:10,gridTemplateColumns:"repeat(auto-fill,minmax(285px,1fr))"}}>
         {filtered.map(p=>{
           const s=stats(p.name); const pct=s.total?Math.round((s.done/s.total)*100):0; const apct=s.total?Math.round((s.approved/s.total)*100):0;
@@ -2356,8 +2359,8 @@ function QRModal({project,onClose}){
   };
   const copy=()=>{try{navigator.clipboard.writeText(url);window.alert("Link copied!");}catch{window.alert(url);}};
   const emailLink=async()=>{
-    const subject=`Punch list — ${project.name}`;
-    const body=[`Hi,`,``,`Here is the punch list link for ${project.name}:`,url,``,`Open the link to view your current punch list items and status.`,``,`Thank you,`,co.name].join("\n");
+    const subject=`SnagList — ${project.name}`;
+    const body=[`Hi,`,``,`Here is the snag list link for ${project.name}:`,url,``,`Open the link to view your current snag list items and status.`,``,`Thank you,`,co.name].join("\n");
     try{await navigator.clipboard.writeText(`Subject: ${subject}\n\n${body}`);setEmailCopied(true);setTimeout(()=>setEmailCopied(false),3000);}
     catch{window.prompt("Copy this email text:",`Subject: ${subject}\n\n${body}`);}
   };
@@ -2375,7 +2378,7 @@ function QRModal({project,onClose}){
   <div class="job-name">${esc(project.name)}</div>
   ${jobInfo?`<div style="font-size:13px;color:#8A8279;margin-bottom:6px">${esc(jobInfo)}</div>`:""}
   <div class="qr-wrap">${qrDataUrl?`<img src="${qrDataUrl}" class="qr-img" alt="QR Code">`:`<div style="width:240px;height:240px;display:flex;align-items:center;justify-content:center;font-size:12px;color:#999">QR not available</div>`}</div>
-  <div style="font-size:13px;color:#8A8279;margin-bottom:12px">Scan to view punch list for this job.</div>
+  <div style="font-size:13px;color:#8A8279;margin-bottom:12px">Scan to view snag list for this job.</div>
   ${coAddr?`<div class="footer">${esc(co.name)} · ${esc(coAddr)}</div>`:""}
   ${coContact?`<div class="footer">${esc(coContact)}</div>`:""}
   <div class="url">${esc(url)}</div>
@@ -2407,7 +2410,7 @@ function QRModal({project,onClose}){
           <Btn kind="ghost" onClick={printQR} style={{width:"100%"}}>🖨 Print QR poster as PDF</Btn>
           {posterMsg&&<div style={{fontSize:12.5,color:C.sage,fontWeight:600,padding:"6px 10px",background:"#EAF2E8",borderRadius:7}}>{posterMsg}</div>}
         </div>
-        <p style={{fontSize:12.5,color:C.taupe,marginTop:14,lineHeight:1.6}}>Anyone with this link sees a read-only punch list for <b>{project.name}</b> only.</p>
+        <p style={{fontSize:12.5,color:C.taupe,marginTop:14,lineHeight:1.6}}>Anyone with this link sees a read-only snag list for <b>{project.name}</b> only.</p>
       </div>
     </div>
   </div></Modal>);
@@ -2421,14 +2424,14 @@ function EmailModal({tasks,emailMap,pendingNotif,onClearNotif,onClose}){
   const byTrade={}; for(const t of relevant)(byTrade[t.trade]=byTrade[t.trade]||[]).push(t);
   const names=mode==="status"?Object.keys(pendingNotif).filter(tr=>pendingNotif[tr]?.length):Object.keys(byTrade).sort();
   const bodyFor=(trade,list)=>{
-    const lines=[`Hi ${trade} team,`,"",mode==="status"?"Status update on your punch list items:":mode==="overdue"?"Items overdue or due within 3 days:":"Your current open punch list items:",""];
+    const lines=[`Hi ${trade} team,`,"",mode==="status"?"Status update on your snag list items:":mode==="overdue"?"Items overdue or due within 3 days:":"Your current open snag list items:",""];
     const bj={}; for(const t of list)(bj[t.project]=bj[t.project]||[]).push(t);
     for(const [job,items] of Object.entries(bj)){lines.push(job.toUpperCase());for(const t of items){lines.push(`  • ${t.area}: ${t.description}`);lines.push(`    Status: ${t.status} | Due: ${fmtDate(t.dueDate)}${t.dueDate&&t.dueDate<tdy?" (PAST DUE)":""}`);}lines.push("");}
     lines.push("Thank you,",co.name); return lines.join("\n");
   };
   const openMail=(trade,list)=>{
     const to=emailMap[trade]||"";
-    const subj={status:"Punch list status update",all:"Open punch list items",overdue:"Punch list reminder"};
+    const subj={status:"SnagList status update",all:"Open snag list items",overdue:"SnagList reminder"};
     const subject=co.name+" — "+subj[mode];
     const body=bodyFor(trade,list).slice(0,1800);
     const href=`mailto:${encodeURIComponent(to)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
@@ -2473,7 +2476,7 @@ function EmailAllModal({job,tasks,emailMap,loadPhoto,onClose}){
 
   const buildBody=()=>[
     `Hi,`,``,
-    `Please review the current punch list for ${job.name}.`,``,
+    `Please review the current snag list for ${job.name}.`,``,
     `View your open items, check status, and print anytime:`,
     jobUrl,``,
     `If you have any questions, please don't hesitate to reach out.`,``,
@@ -2485,7 +2488,7 @@ function EmailAllModal({job,tasks,emailMap,loadPhoto,onClose}){
 
   const openEmail=()=>{
     const bcc=tradesWithEmail.map(t=>emailMap[t]).join(",");
-    const subject=`${co.name} — Punch list: ${job.name}`;
+    const subject=`${co.name} — SnagList: ${job.name}`;
     const body=buildBody().slice(0,1900);
     const to=co.email||"";
     const href=`mailto:${encodeURIComponent(to)}?bcc=${encodeURIComponent(bcc)}&subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
@@ -2496,7 +2499,7 @@ function EmailAllModal({job,tasks,emailMap,loadPhoto,onClose}){
 
   const openOne=(trade)=>{
     const to=emailMap[trade]||"";
-    const subject=`${co.name} — Punch list: ${job.name}`;
+    const subject=`${co.name} — SnagList: ${job.name}`;
     const body=[`Hi ${trade} team,`,``,`Please review your current open items for ${job.name}:`,jobUrl,``,`Thank you,`,co.name].join("\n").slice(0,1900);
     const href=`mailto:${encodeURIComponent(to)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
     const a=document.createElement("a");a.href=href;a.target="_blank";a.rel="noopener";
@@ -2515,10 +2518,10 @@ function EmailAllModal({job,tasks,emailMap,loadPhoto,onClose}){
     {tradesWithEmail.length>0?(
       <div style={{background:sent?"#EAF2E8":C.mist,border:`1.5px solid ${sent?C.sage:C.line}`,borderRadius:12,padding:"18px 20px",marginBottom:16}}>
         <div style={{fontWeight:700,fontSize:15,color:sent?C.sage:C.ink,marginBottom:6}}>
-          {sent?"✓ Email opened in your mail app — review and send":"Send punch list link to all trades"}
+          {sent?"✓ Email opened in your mail app — review and send":"Send snag list link to all trades"}
         </div>
         <div style={{fontSize:13,color:C.taupe,marginBottom:16,lineHeight:1.7}}>
-          Opens your mail app with a clean message and the punch list link.
+          Opens your mail app with a clean message and the snag list link.
           <b> You</b> are in the To field. All <b>{tradesWithEmail.length} trade{tradesWithEmail.length!==1?"s":""}</b> are BCC'd — each sees only their own address.
           {!co.email&&<span style={{color:C.amber,display:"block",marginTop:6}}>⚠ Add your email in ⚙ Settings to be included in the To field.</span>}
         </div>
@@ -3123,7 +3126,7 @@ function Report({tasks,jobLabel,filters,userName,loadPhoto,onBack,project}){
       }
     }
     const logoHtml=co.logoUrl?`<img src="${co.logoUrl}" style="height:48px;max-width:200px;object-fit:contain;display:block;margin-bottom:4px" alt="">`:`<div style="font-family:'Cormorant Garamond',Georgia,serif;font-size:28px;color:#7B756E;font-style:italic">${esc(co.name||"")}</div>`;
-    const html=`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Punch List — ${esc(jobLabel)}</title><style>@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Raleway:wght@300;400;500;600;700&display=swap');body{font-family:Raleway,sans-serif;color:#2E2B28;max-width:860px;margin:0 auto;padding:32px 24px}.hdr{display:flex;justify-content:space-between;border-bottom:3px solid #2E2B28;padding-bottom:12px}h1{font-family:'Cormorant Garamond',Georgia,serif;font-size:30px;font-weight:600;margin:6px 0 2px}h2{font-family:'Cormorant Garamond',Georgia,serif;font-size:20px;font-weight:600;border-bottom:2px solid #DDD9D3;padding-bottom:3px;margin:24px 0 5px}h3{font-size:11px;text-transform:uppercase;letter-spacing:0.1em;color:#7B756E;margin:12px 0 3px}table{width:100%;border-collapse:collapse;font-size:13px}th{text-align:left;color:#7B756E;border-bottom:1px solid #B2A98B;padding:5px 6px;font-size:11px;text-transform:uppercase}td{border-bottom:1px solid #E8E4DE;padding:5px 6px;vertical-align:top}.meta{text-align:right;font-size:12px;color:#555}.foot{margin-top:36px;font-size:11px;color:#9A9590;border-top:1px solid #DDD9D3;padding-top:8px}@media print{body{padding:0}}</style></head><body><div class="hdr"><div>${logoHtml}<h1>Punch List Report</h1><div style="font-size:12px;letter-spacing:0.08em;text-transform:uppercase;font-weight:600;color:#7B756E;margin-top:3px">${esc(jobLabel)}</div>${project&&project.siteContact?`<div style="font-size:12px;color:#8A8279;margin-top:3px">Site: ${esc(project.siteContact)}${project.sitePhone?" · "+esc(project.sitePhone):""}</div>`:""}</div><div class="meta"><div>Generated ${fmtDate(today())} by ${esc(userName)}</div><div style="font-weight:700;margin-top:3px">${open} open · ${done} approved · ${tasks.length} total</div></div></div>${body}<div class="foot">${esc(co.name)}${[co.address,co.city,co.state].filter(Boolean).length>0?" · "+[co.address,co.city,co.state].filter(Boolean).map(esc).join(", "):""}${co.phone?" · "+esc(co.phone):""}<div style="font-family:'Cormorant Garamond',Georgia,serif;font-style:italic;color:${co.accentColor||"#BBA270"};font-size:13px;margin-top:2px">"${esc(co.tagline||"")}"</div></div></body></html>`;
+    const html=`<!DOCTYPE html><html><head><meta charset="utf-8"><title>SnagList Report — ${esc(jobLabel)}</title><style>@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Raleway:wght@300;400;500;600;700&display=swap');body{font-family:Raleway,sans-serif;color:#2E2B28;max-width:860px;margin:0 auto;padding:32px 24px}.hdr{display:flex;justify-content:space-between;border-bottom:3px solid #2E2B28;padding-bottom:12px}h1{font-family:'Cormorant Garamond',Georgia,serif;font-size:30px;font-weight:600;margin:6px 0 2px}h2{font-family:'Cormorant Garamond',Georgia,serif;font-size:20px;font-weight:600;border-bottom:2px solid #DDD9D3;padding-bottom:3px;margin:24px 0 5px}h3{font-size:11px;text-transform:uppercase;letter-spacing:0.1em;color:#7B756E;margin:12px 0 3px}table{width:100%;border-collapse:collapse;font-size:13px}th{text-align:left;color:#7B756E;border-bottom:1px solid #B2A98B;padding:5px 6px;font-size:11px;text-transform:uppercase}td{border-bottom:1px solid #E8E4DE;padding:5px 6px;vertical-align:top}.meta{text-align:right;font-size:12px;color:#555}.foot{margin-top:36px;font-size:11px;color:#9A9590;border-top:1px solid #DDD9D3;padding-top:8px}@media print{body{padding:0}}</style></head><body><div class="hdr"><div>${logoHtml}<h1>SnagList Report</h1><div style="font-size:12px;letter-spacing:0.08em;text-transform:uppercase;font-weight:600;color:#7B756E;margin-top:3px">${esc(jobLabel)}</div>${project&&project.siteContact?`<div style="font-size:12px;color:#8A8279;margin-top:3px">Site: ${esc(project.siteContact)}${project.sitePhone?" · "+esc(project.sitePhone):""}</div>`:""}</div><div class="meta"><div>Generated ${fmtDate(today())} by ${esc(userName)}</div><div style="font-weight:700;margin-top:3px">${open} open · ${done} approved · ${tasks.length} total</div></div></div>${body}<div class="foot">${esc(co.name)}${[co.address,co.city,co.state].filter(Boolean).length>0?" · "+[co.address,co.city,co.state].filter(Boolean).map(esc).join(", "):""}${co.phone?" · "+esc(co.phone):""}<div style="font-family:'Cormorant Garamond',Georgia,serif;font-style:italic;color:${co.accentColor||"#BBA270"};font-size:13px;margin-top:2px">"${esc(co.tagline||"")}"</div></div></body></html>`;
     printHTML(html);
   }finally{setExporting(false);}};
   return(<div style={{background:"#fff",minHeight:"100vh"}}>
@@ -3134,7 +3137,7 @@ function Report({tasks,jobLabel,filters,userName,loadPhoto,onBack,project}){
     </div>
     <div style={{maxWidth:860,margin:"0 auto",padding:"28px 22px",color:C.ink}}>
       <div style={{display:"flex",justifyContent:"space-between",borderBottom:`3px solid ${C.ink}`,paddingBottom:11,gap:14}}>
-        <div><Wordmark size={26}/><div style={{...DISP,fontSize:30,fontWeight:600,lineHeight:1,marginTop:7}}>Punch List Report</div><div style={{...CAPT,fontSize:13,fontWeight:600,color:C.taupe,marginTop:4}}>{jobLabel}</div></div>
+        <div><Wordmark size={26}/><div style={{...DISP,fontSize:30,fontWeight:600,lineHeight:1,marginTop:7}}>SnagList Report</div><div style={{...CAPT,fontSize:13,fontWeight:600,color:C.taupe,marginTop:4}}>{jobLabel}</div></div>
         <div style={{textAlign:"right",fontSize:12.5,color:"#555"}}><div>Generated {fmtDate(today())} by {userName}</div><div style={{fontWeight:700,marginTop:3,color:C.ink}}>{open} open · {done} approved · {tasks.length} total</div></div>
       </div>
       {Object.entries(groups).map(([proj,areas])=>(<div key={proj} style={{marginTop:22}}>
