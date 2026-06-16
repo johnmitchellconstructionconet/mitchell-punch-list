@@ -619,7 +619,16 @@ function InternalApp() {
     setSyncing(false); setLoaded(true);
   },[]);
 
-  useEffect(()=>{ if(authed) loadAll(); },[authed,loadAll]);
+  // ── Boot: start data fetch immediately (don't wait for login) ──
+  // This fires the Supabase queries in parallel with the login screen rendering
+  // so by the time the user types their name and clicks Sign In, data is ready.
+  useEffect(()=>{ loadAll(); },[loadAll]);
+
+  // ── Auto-login: remember the user across sessions ──
+  useEffect(()=>{
+    const saved = localStorage.getItem("snaglist_user");
+    if(saved) { setUser(saved); setAuthed(true); }
+  },[]);
 
   // ── Persist helpers ──
   const addProject = async (proj) => {
@@ -727,22 +736,15 @@ function InternalApp() {
 
   const openTask = tasks.find(t=>t.id===openTaskId);
 
-  // Pre-load team code so the sign-in check is instant (no round-trip on button click)
-  const [preloadedCode, setPreloadedCode] = useState(null);
-  useEffect(()=>{
-    getSetting("teamcode").then(v=>setPreloadedCode(v||""));
-  },[]);
-  const loadCode = async () => {
-    // Use cached value if available, otherwise fetch
-    if(preloadedCode !== null) return preloadedCode;
-    const v = await getSetting("teamcode"); return v||"";
-  };
+  // teamCode is already loaded by loadAll() which runs on mount.
+  // Pass it directly to the login screen — no extra fetch needed.
+  const loadCode = useCallback(() => Promise.resolve(teamCode), [teamCode]);
 
-  if(!authed) return <Shell><InternalLogin loadCode={loadCode} onAuth={name=>{setUser(name);setAuthed(true);}}/></Shell>;
+  if(!authed) return <Shell><InternalLogin loadCode={loadCode} onAuth={name=>{localStorage.setItem("snaglist_user",name);setUser(name);setAuthed(true);}}/></Shell>;
   if(!loaded) return (
     <CompanyCtx.Provider value={coSettings}>
     <Shell>
-      <InternalHeader userName={user} syncing={true} onSync={()=>{}} mentionCount={0} onMentions={()=>{}} onSignOut={()=>{setAuthed(false);setUser(null);setLoaded(false);}}/>
+      <InternalHeader userName={user} syncing={true} onSync={()=>{}} mentionCount={0} onMentions={()=>{}} onSignOut={()=>{localStorage.removeItem("snaglist_user");setAuthed(false);setUser(null);setLoaded(false);}}/>
       <div style={{padding:"32px 20px",maxWidth:900,margin:"0 auto"}}>
         {/* Skeleton cards */}
         {[1,2,3].map(i=>(
@@ -769,7 +771,7 @@ function InternalApp() {
           <InternalHeader userName={user} syncing={syncing} onSync={loadAll}
             mentionCount={tasks.filter(t=>(t.mentions||[]).some(m=>m.toLowerCase()===user?.toLowerCase())).length}
             onMentions={()=>setShowMentions(true)}
-            onSignOut={()=>{setAuthed(false);setUser(null);setLoaded(false);setCurrentJob(null);}}/>
+            onSignOut={()=>{localStorage.removeItem("snaglist_user");setAuthed(false);setUser(null);setLoaded(false);setCurrentJob(null);}}/>
           {currentJob===null?(
             <Dashboard projects={projects} tasks={tasks}
               onOpenJob={n=>{setCurrentJob(n);setFilters({status:"All",trade:"All",priority:"All",dueDate:"All",q:""});setTaskMode("list");}}
@@ -1151,11 +1153,11 @@ function Modal({children,onClose,wide,xwide}){
 }
 
 function InternalLogin({loadCode,onAuth}){
-  const [name,setName]=useState(""); const [code,setCode]=useState(""); const [err,setErr]=useState(""); const [busy,setBusy]=useState(false);
+  const [name,setName]=useState(""); const [code,setCode]=useState(""); const [err,setErr]=useState("");
   const enter=async()=>{
-    if(!name.trim())return; setBusy(true); setErr("");
+    if(!name.trim())return; setErr("");
     const tc=await loadCode();
-    if(tc&&code.trim()!==tc){setErr("Incorrect access code.");setBusy(false);return;}
+    if(tc&&code.trim()!==tc){setErr("Incorrect access code.");return;}
     onAuth(name.trim());
   };
   return(
@@ -1170,7 +1172,7 @@ function InternalLogin({loadCode,onAuth}){
         <input type="password" value={code} onChange={e=>setCode(e.target.value)} placeholder="••••••" style={{marginBottom:6}} onKeyDown={e=>e.key==="Enter"&&name.trim()&&enter()}/>
         <p style={{fontSize:12.5,color:C.taupe,margin:"0 0 14px"}}>Set in the Trade Directory. Leave blank if none configured yet.</p>
         {err&&<div style={{background:"#F2DEDA",color:C.rust,borderRadius:8,padding:"9px 12px",fontSize:13,fontWeight:600,marginBottom:12}}>{err}</div>}
-        <Btn kind="dark" disabled={!name.trim()||busy} style={{width:"100%",opacity:name.trim()?1:0.4,fontSize:16}} onClick={enter}>{busy?"Checking…":"Sign in →"}</Btn>
+        <Btn kind="dark" disabled={!name.trim()} style={{width:"100%",opacity:name.trim()?1:0.4,fontSize:16}} onClick={enter}>Sign in →</Btn>
       </div>
     </div>
   );
