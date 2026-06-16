@@ -778,6 +778,7 @@ function InternalApp() {
       {showEditJob&&currProj&&<EditJobModal project={currProj} onCancel={()=>setShowEditJob(false)} onSave={async j=>{await updateProjectState(j);setShowEditJob(false);}}/>}
       {showNew&&<NewTaskModal userName={user} lockedProject={currentJob&&currentJob!=="ALL"?currentJob:null}
         projects={projects.filter(p=>p.status==="Active")} trades={tradeOpts} companies={companies}
+        teamMembers={teamMembers} allTasks={tasks}
         savePhoto={savePhoto} requestAnnotate={(d,cb)=>setAnnotate({dataUrl:d,onSave:cb})}
         onCancel={()=>setShowNew(false)} onCreate={async t=>{await addTask(t);setShowNew(false);}}/>}
       {openTask&&<TaskDetail key={openTask.id} taskId={openTask.id} tasks={tasks} userName={user}
@@ -797,11 +798,15 @@ function InternalApp() {
       {showBatch&&<BatchModal
         tasks={currentJob&&currentJob!=="ALL"?tasks.filter(t=>t.project===currentJob):tasks}
         trades={trades}
-        onApply={async (selectedIds,newStatus)=>{
+        onApply={async (selectedIds, patch)=>{
           const toUpdate = tasks.filter(t=>selectedIds.includes(t.id));
           for (const t of toUpdate) {
-            const patch = {status:newStatus,statusHistory:[...(t.statusHistory||[]),{status:newStatus,by:user,ts:Date.now()}]};
-            await updateTaskById(t.id, patch);
+            const update = {...patch};
+            // If changing status, append to statusHistory
+            if(patch.status){
+              update.statusHistory=[...(t.statusHistory||[]),{status:patch.status,by:user,ts:Date.now()}];
+            }
+            await updateTaskById(t.id, update);
           }
           setShowBatch(false);
         }}
@@ -2100,7 +2105,7 @@ function NewJobModal({onCancel,onCreate}){
   </div></Modal>);
 }
 
-function NewTaskModal({userName,lockedProject,projects,companies,trades,savePhoto,requestAnnotate,onCancel,onCreate,teamMembers=[]}){
+function NewTaskModal({userName,lockedProject,projects,companies,trades,savePhoto,requestAnnotate,onCancel,onCreate,teamMembers=[],allTasks=[]}){
   const [f,setF]=useState({project:lockedProject||projects[0]?.name||"",area:"",description:"",trades:[],priority:"Medium",dueDate:today()});
   const [myTaskAssign,setMyTaskAssign]=useState(userName?[{name:userName,note:""}]:[]);
   const [photos,setPhotos]=useState([]); const [creating,setCreating]=useState(false); const fileRef=useRef();
@@ -2115,6 +2120,29 @@ function NewTaskModal({userName,lockedProject,projects,companies,trades,savePhot
       myTasks:myTaskAssign,
       status:"Reported",approval:"Pending",photos:ids,comments:[],statusHistory:[],createdBy:userName,createdAt:Date.now(),approvedBy:null,approvedAt:null});
     setCreating(false);
+  };
+
+  // When trades change, auto-populate the due date from any existing task
+  // in the same job that shares one of the selected trades — most recent due date wins
+  const handleTradesChange = (newTrades) => {
+    setF(prev=>{
+      if(newTrades.length===0) return {...prev,trades:newTrades};
+      // Find existing tasks in the same project that have any of these trades
+      const projectTasks = allTasks.filter(t=>
+        t.project===prev.project &&
+        t.dueDate &&
+        t.approval!=="Approved" &&
+        newTrades.some(tr=>
+          (Array.isArray(t.trades)?t.trades:[t.trade]).includes(tr)
+        )
+      );
+      if(projectTasks.length===0) return {...prev,trades:newTrades};
+      // Pick the most common due date among those tasks; ties broken by most recent
+      const dateCounts={};
+      for(const t of projectTasks) dateCounts[t.dueDate]=(dateCounts[t.dueDate]||0)+1;
+      const bestDate=Object.entries(dateCounts).sort((a,b)=>b[1]-a[1]||b[0].localeCompare(a[0]))[0][0];
+      return {...prev,trades:newTrades,dueDate:bestDate};
+    });
   };
 
   const co=useCompany();
@@ -2140,7 +2168,7 @@ function NewTaskModal({userName,lockedProject,projects,companies,trades,savePhot
         <Lbl>Assigned trade(s)</Lbl>
         <TradeCombobox
           value={f.trades}
-          onChange={v=>setF(p=>({...p,trades:v}))}
+          onChange={handleTradesChange}
           allTrades={allTradeOptions}
           companies={companies}
           placeholder="Search trades…"
@@ -2909,37 +2937,119 @@ function CompanySettings({settings,onSave,onClose}){
 }
 
 function BatchModal({tasks,trades,onApply,onClose}){
-  const [selectedTrade,setSelectedTrade]=useState(""); const [newStatus,setNewStatus]=useState("Scheduled");
-  const [selected,setSelected]=useState(new Set()); const [filterStatus,setFilterStatus]=useState("All");
-  const tradeTasks=tasks.filter(t=>(!selectedTrade||t.trade===selectedTrade)&&(filterStatus==="All"||t.status===filterStatus)).sort((a,b)=>(a.project+a.area+a.description).localeCompare(b.project+b.area+b.description));
+  const co=useCompany();
+  const accent=co?.accentColor||C.gold;
+  const [mode,setMode]=useState("status"); // "status" | "dueDate" | "priority"
+  const [selectedTrade,setSelectedTrade]=useState("");
+  const [filterStatus,setFilterStatus]=useState("All");
+  const [selected,setSelected]=useState(new Set());
+  // Per-mode values
+  const [newStatus,  setNewStatus]  =useState("Scheduled");
+  const [newDueDate, setNewDueDate] =useState(today());
+  const [newPriority,setNewPriority]=useState("Medium");
+
+  const tradeTasks=tasks
+    .filter(t=>(!selectedTrade||t.trade===selectedTrade)&&(filterStatus==="All"||t.status===filterStatus))
+    .sort((a,b)=>(a.project+a.area+a.description).localeCompare(b.project+b.area+b.description));
   const allIds=new Set(tradeTasks.map(t=>t.id));
   const allChecked=tradeTasks.length>0&&tradeTasks.every(t=>selected.has(t.id));
   const someChecked=tradeTasks.some(t=>selected.has(t.id));
   const toggle=id=>setSelected(prev=>{const n=new Set(prev);n.has(id)?n.delete(id):n.add(id);return n;});
-  const toggleAll=()=>{if(allChecked){setSelected(prev=>{const n=new Set(prev);allIds.forEach(id=>n.delete(id));return n;});}else{setSelected(prev=>{const n=new Set(prev);allIds.forEach(id=>n.add(id));return n;});}};
+  const toggleAll=()=>{
+    if(allChecked){setSelected(prev=>{const n=new Set(prev);allIds.forEach(id=>n.delete(id));return n;});}
+    else{setSelected(prev=>{const n=new Set(prev);allIds.forEach(id=>n.add(id));return n;});}
+  };
   const toApply=tradeTasks.filter(t=>selected.has(t.id));
   const byProject={};for(const t of tradeTasks)(byProject[t.project]=byProject[t.project]||[]).push(t);
+
+  const applyLabel=()=>{
+    if(mode==="status")   return `"${newStatus}"`;
+    if(mode==="dueDate")  return `due ${fmtDate(newDueDate)}`;
+    if(mode==="priority") return `${newPriority} priority`;
+    return "";
+  };
+  const doApply=()=>{
+    const ids=[...toApply.map(t=>t.id)];
+    if(mode==="status")   onApply(ids,{status:newStatus});
+    if(mode==="dueDate")  onApply(ids,{dueDate:newDueDate});
+    if(mode==="priority") onApply(ids,{priority:newPriority});
+  };
+
+  const MODES=[["status","Status"],["dueDate","Due Date"],["priority","Priority"]];
+
   return(
     <Modal onClose={onClose} wide><div style={{padding:20}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:16}}>
-        <div><h2 style={{...DISP,fontSize:26,margin:"0 0 4px"}}>Batch Status Update</h2><p style={{fontSize:13.5,color:C.taupe,margin:0}}>Select a trade, pick tasks, choose new status, apply.</p></div>
+        <div>
+          <h2 style={{...DISP,fontSize:26,margin:"0 0 4px"}}>Batch Update</h2>
+          <p style={{fontSize:13.5,color:C.taupe,margin:0}}>Select tasks, choose what to change, apply.</p>
+        </div>
         <button onClick={onClose} style={{background:"transparent",border:"none",fontSize:22,color:C.taupe,cursor:"pointer"}}>×</button>
       </div>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr auto",gap:10,marginBottom:14,padding:"14px 16px",background:C.mist,borderRadius:10}}>
-        <div><label style={{...CAPT,fontSize:11,fontWeight:600,color:C.taupe,display:"block",marginBottom:5}}>Trade</label><select value={selectedTrade} onChange={e=>{setSelectedTrade(e.target.value);setSelected(new Set());setFilterStatus("All");}} style={{width:"100%"}}><option value="">All trades</option>{trades.map(t=><option key={t} value={t}>{t}</option>)}</select></div>
-        <div><label style={{...CAPT,fontSize:11,fontWeight:600,color:C.taupe,display:"block",marginBottom:5}}>Current status</label><select value={filterStatus} onChange={e=>{setFilterStatus(e.target.value);setSelected(new Set());}} style={{width:"100%"}}><option>All</option>{STATUSES.map(s=><option key={s}>{s}</option>)}</select></div>
-        <div><label style={{...CAPT,fontSize:11,fontWeight:600,color:C.taupe,display:"block",marginBottom:5}}>Change to</label><select value={newStatus} onChange={e=>setNewStatus(e.target.value)} style={{width:"auto",minWidth:150}}>{STATUSES.map(s=><option key={s}>{s}</option>)}</select></div>
+
+      {/* Mode tabs */}
+      <div style={{display:"flex",gap:0,border:`1px solid ${C.line}`,borderRadius:8,overflow:"hidden",width:"fit-content",marginBottom:14}}>
+        {MODES.map(([v,l])=>(
+          <button key={v} onClick={()=>setMode(v)}
+            style={{background:mode===v?C.ink:"#fff",color:mode===v?"#fff":C.ink,padding:"9px 16px",fontSize:13,fontWeight:600,border:"none",borderRadius:0}}>
+            {l}
+          </button>
+        ))}
       </div>
+
+      {/* Filters + value selector */}
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginBottom:14,padding:"14px 16px",background:C.mist,borderRadius:10}}>
+        <div>
+          <label style={{...CAPT,fontSize:11,fontWeight:600,color:C.taupe,display:"block",marginBottom:5}}>Trade</label>
+          <select value={selectedTrade} onChange={e=>{setSelectedTrade(e.target.value);setSelected(new Set());}} style={{width:"100%"}}>
+            <option value="">All trades</option>{trades.map(t=><option key={t} value={t}>{t}</option>)}
+          </select>
+        </div>
+        <div>
+          <label style={{...CAPT,fontSize:11,fontWeight:600,color:C.taupe,display:"block",marginBottom:5}}>Current status</label>
+          <select value={filterStatus} onChange={e=>{setFilterStatus(e.target.value);setSelected(new Set());}} style={{width:"100%"}}>
+            <option>All</option>{STATUSES.map(s=><option key={s}>{s}</option>)}
+          </select>
+        </div>
+        <div>
+          {mode==="status"&&<>
+            <label style={{...CAPT,fontSize:11,fontWeight:600,color:C.taupe,display:"block",marginBottom:5}}>Set status to</label>
+            <select value={newStatus} onChange={e=>setNewStatus(e.target.value)} style={{width:"100%"}}>
+              {STATUSES.map(s=><option key={s}>{s}</option>)}
+            </select>
+          </>}
+          {mode==="dueDate"&&<>
+            <label style={{...CAPT,fontSize:11,fontWeight:600,color:C.taupe,display:"block",marginBottom:5}}>Set due date to</label>
+            <input type="date" value={newDueDate} onChange={e=>setNewDueDate(e.target.value)} style={{width:"100%"}}/>
+          </>}
+          {mode==="priority"&&<>
+            <label style={{...CAPT,fontSize:11,fontWeight:600,color:C.taupe,display:"block",marginBottom:5}}>Set priority to</label>
+            <select value={newPriority} onChange={e=>setNewPriority(e.target.value)} style={{width:"100%"}}>
+              {PRIORITIES.map(p=><option key={p}>{p}</option>)}
+            </select>
+          </>}
+        </div>
+      </div>
+
+      {/* Select all / apply bar */}
       {tradeTasks.length>0&&(
         <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:10,paddingBottom:10,borderBottom:`1px solid ${C.line}`}}>
           <label style={{display:"flex",alignItems:"center",gap:8,cursor:"pointer",fontWeight:600,fontSize:14}}>
             <input type="checkbox" checked={allChecked} ref={el=>{if(el)el.indeterminate=someChecked&&!allChecked;}} onChange={toggleAll} style={{width:18,height:18,cursor:"pointer"}}/>
             {allChecked?"Deselect all":"Select all"} ({tradeTasks.length})
           </label>
-          {toApply.length>0&&<div style={{flex:1,display:"flex",justifyContent:"flex-end"}}><Btn kind="primary" onClick={()=>onApply([...toApply.map(t=>t.id)],newStatus)} style={{padding:"9px 18px"}}>✓ Apply "{newStatus}" to {toApply.length} task{toApply.length!==1?"s":""}</Btn></div>}
+          {toApply.length>0&&(
+            <div style={{flex:1,display:"flex",justifyContent:"flex-end"}}>
+              <Btn kind="primary" onClick={doApply} style={{padding:"9px 18px"}}>
+                ✓ Apply {applyLabel()} to {toApply.length} task{toApply.length!==1?"s":""}
+              </Btn>
+            </div>
+          )}
         </div>
       )}
-      {tradeTasks.length===0&&<div style={{padding:32,textAlign:"center",color:C.taupe,background:"#fff",borderRadius:10,border:`1px dashed ${C.line}`}}>{selectedTrade?`No tasks for ${selectedTrade}`:"Select a trade above."}</div>}
+      {tradeTasks.length===0&&<div style={{padding:32,textAlign:"center",color:C.taupe,background:"#fff",borderRadius:10,border:`1px dashed ${C.line}`}}>{selectedTrade?`No tasks for ${selectedTrade}`:"No tasks match the current filters."}</div>}
+
+      {/* Task list */}
       <div style={{maxHeight:420,overflowY:"auto"}}>
         {Object.entries(byProject).map(([proj,list])=>(
           <div key={proj} style={{marginBottom:16}}>
@@ -2950,20 +3060,30 @@ function BatchModal({tasks,trades,onApply,onClose}){
                 <div style={{flex:1,minWidth:0}}>
                   <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:3,flexWrap:"wrap"}}>
                     <span style={{fontSize:12,fontWeight:600,color:C.taupe}}>{t.area}</span>
-                    <StatusChip status={t.status}/><ApprovalChip approval={t.approval}/>
+                    <StatusChip status={t.status}/>
+                    <span style={{fontSize:11,fontWeight:700,color:PRI_FG[t.priority]}}>{t.priority}</span>
                   </div>
                   <div style={{fontSize:14,fontWeight:500,lineHeight:1.35}}>{t.description}</div>
                 </div>
-                {t.dueDate&&<div style={{fontSize:12,color:C.stone,flexShrink:0}}>Due {fmtDate(t.dueDate)}</div>}
+                <div style={{fontSize:12,color:C.stone,flexShrink:0,textAlign:"right"}}>
+                  {t.dueDate&&<div>Due {fmtDate(t.dueDate)}</div>}
+                  <div style={{color:C.stone}}>{t.trade}</div>
+                </div>
               </label>
             ))}
           </div>
         ))}
       </div>
+
       {toApply.length>0&&(
         <div style={{marginTop:14,paddingTop:12,borderTop:`1px solid ${C.line}`,display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:10}}>
-          <div style={{fontSize:13.5,color:C.taupe}}>Setting <b style={{color:C.ink}}>{toApply.length}</b> task{toApply.length!==1?"s":""} to <StatusChip status={newStatus} big/></div>
-          <div style={{display:"flex",gap:9}}><Btn kind="ghost" onClick={onClose}>Cancel</Btn><Btn kind="primary" onClick={()=>onApply([...toApply.map(t=>t.id)],newStatus)}>Apply</Btn></div>
+          <div style={{fontSize:13.5,color:C.taupe}}>
+            Updating <b style={{color:C.ink}}>{toApply.length}</b> task{toApply.length!==1?"s":""} → {applyLabel()}
+          </div>
+          <div style={{display:"flex",gap:9}}>
+            <Btn kind="ghost" onClick={onClose}>Cancel</Btn>
+            <Btn kind="primary" onClick={doApply}>Apply</Btn>
+          </div>
         </div>
       )}
     </div></Modal>
