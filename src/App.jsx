@@ -400,8 +400,11 @@ function PubTaskDetail({task,project,loadPhoto,onLightbox,onClose,onUpdate,trade
     if(!tradeName.trim()||!text?.trim())return;
     setPosting(true);
     const newComment={id:uid(),author:tradeName.trim(),role:"trade",text:text.trim(),ts:Date.now()};
+    const extracted = parseMentions(text);
+    const merged = [...new Set([...(task.mentions||[]),...extracted.map(m=>m.toLowerCase())])];
     await onUpdate(task.id,{
       comments:[...(task.comments||[]),newComment],
+      mentions: merged,
     });
     setPosting(false);
   };
@@ -868,18 +871,18 @@ function Wordmark({size=32, forceText=false, darkBg=false, systemOnly=false}){
   // forceText means show customer logo if available (used in reports/PDFs)
   const SNAGLIST_LOGO = "data:image/webp;base64,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";
   const h = Math.round(size * 1.1);
-  const w = Math.round(h * (1366/317));
 
   if (!systemOnly && co.logoUrl && forceText) {
     // Customer logo — only on reports/PDFs when explicitly requested
     return <img src={co.logoUrl} alt={co.name} style={{height:size*1.6,maxWidth:size*7,objectFit:"contain",display:"block"}}/>;
   }
 
-  // Always show SnagList system logo in all other contexts (header, login, public view, etc.)
+  // Always show SnagList system logo — height drives size, width is auto from aspect ratio
+  const logoStyle = {height:h, width:"auto", display:"block"};
   if (darkBg) {
-    return <img src={SNAGLIST_LOGO} alt="SnagList" style={{height:h,width:w,objectFit:"contain",display:"block",filter:"brightness(0) invert(1)"}}/>;
+    return <img src={SNAGLIST_LOGO} alt="SnagList" style={{...logoStyle, filter:"brightness(0) invert(1)"}}/>;
   }
-  return <img src={SNAGLIST_LOGO} alt="SnagList" style={{height:h,width:w,objectFit:"contain",display:"block"}}/>;
+  return <img src={SNAGLIST_LOGO} alt="SnagList" style={logoStyle}/>;
 }
 
 function Btn({kind="primary",children,...p}){
@@ -1131,7 +1134,7 @@ function InternalLogin({loadCode,onAuth}){
   return(
     <div style={{minHeight:"100vh",background:"#F0F1F5",display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
       <div style={{background:C.card,borderRadius:18,padding:"40px 36px",width:"100%",maxWidth:400,boxShadow:"0 8px 32px rgba(30,35,54,0.12)",border:`1px solid ${C.line}`,borderTop:`4px solid ${C.navy}`}}>
-        <div style={{textAlign:"center",marginBottom:16}}><Wordmark size={38}/></div>
+        <div style={{display:"flex",justifyContent:"center",marginBottom:20}}><Wordmark size={38}/></div>
         <div style={{fontFamily:"Raleway,system-ui,sans-serif",fontSize:11,letterSpacing:"0.12em",textTransform:"uppercase",color:C.taupe,textAlign:"center",marginBottom:4,fontWeight:500}}>Internal Team Portal</div>
         <h1 style={{fontFamily:"Raleway,system-ui,sans-serif",fontSize:30,fontWeight:300,letterSpacing:"0.02em",margin:"0 0 22px",textAlign:"center",lineHeight:1,color:C.navy}}>Sign In</h1>
         <Lbl>Your name</Lbl>
@@ -2038,8 +2041,11 @@ function TaskDetail({taskId,tasks:allTasks,userName,loadPhoto,savePhoto,requestA
             accent={accent}
             mentionables={mentionables}
             onAdd={text=>{
+              const extracted = parseMentions(text);
+              const merged = [...new Set([...(task.mentions||[]),...extracted.map(m=>m.toLowerCase())])];
               onUpdate({
                 comments:[...(task.comments||[]),{id:uid(),author:userName,role:"internal",text:text.trim(),ts:Date.now()}],
+                mentions: merged,
               });
             }}
           />
