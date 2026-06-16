@@ -42,34 +42,14 @@ export async function getTasks() {
 }
 
 export async function upsertTask(task) {
+  // Single round-trip upsert — RLS is disabled so this works cleanly.
+  // ignoreDuplicates:false means INSERT … ON CONFLICT DO UPDATE.
   const payload = taskToDb(task);
-
-  // SELECT first — .upsert() is blocked by RLS on existing rows without error.
-  const { data: existing, error: selectError } = await supabase
+  const { error } = await supabase
     .from("tasks")
-    .select("id")
-    .eq("id", payload.id)
-    .maybeSingle();
-
-  if (selectError) {
-    throw new Error("Select failed: " + (selectError.message || JSON.stringify(selectError)));
-  }
-
-  if (existing) {
-    const { error: updateError } = await supabase
-      .from("tasks")
-      .update(payload)
-      .eq("id", payload.id);
-    if (updateError) {
-      throw new Error("Update failed: " + (updateError.message || JSON.stringify(updateError)));
-    }
-  } else {
-    const { error: insertError } = await supabase
-      .from("tasks")
-      .insert(payload);
-    if (insertError) {
-      throw new Error("Insert failed: " + (insertError.message || JSON.stringify(insertError)));
-    }
+    .upsert(payload, { onConflict: "id" });
+  if (error) {
+    throw new Error("Save failed: " + (error.message || JSON.stringify(error)));
   }
 }
 
@@ -108,7 +88,7 @@ export async function getPhoto(id) {
     .from("photos")
     .select("data")
     .eq("id", id)
-    .single();
+    .maybeSingle();           // maybeSingle — no error when row missing
   if (error) return null;
   return data?.data || null;
 }
@@ -127,7 +107,7 @@ export async function getSetting(key) {
     .from("settings")
     .select("value")
     .eq("key", key)
-    .single();
+    .maybeSingle();           // maybeSingle — silently returns null when key missing
   if (error) return null;
   return data?.value || null;
 }
@@ -153,7 +133,7 @@ export async function wipeAll() {
 
 // ─── Helpers ─────────────────────────────────────────────────────
 
-// Parse @mentions out of comment text so the bell works without a DB column
+// Parse @mentions out of comment text — used as fallback if no saved mentions
 function extractMentions(comments) {
   const re = /@([\w\s.'-]+?)(?=\s|$|[^a-zA-Z0-9\s.'-])/g;
   const out = new Set();
@@ -161,14 +141,12 @@ function extractMentions(comments) {
     let m;
     re.lastIndex = 0;
     const text = c.text || "";
-    while ((m = re.exec(text)) !== null) out.add(m[1].trim());
+    while ((m = re.exec(text)) !== null) out.add(m[1].trim().toLowerCase());
   }
   return [...out];
 }
 
 // ─── DB row ↔ app object mappers ─────────────────────────────────
-// taskToDb writes ONLY columns that exist in the Supabase tasks table.
-// mentions is derived in memory from comments — no DB column needed.
 
 function dbToProject(r) {
   return {
@@ -198,6 +176,11 @@ function projectToDb(p) {
 
 function dbToTask(r) {
   const comments = r.comments || [];
+  // Use saved mentions if present, otherwise derive from comments (backwards compat)
+  const savedMentions = r.mentions || [];
+  const mentions = savedMentions.length > 0
+    ? savedMentions
+    : extractMentions(comments);
   return {
     id:               r.id,
     project:          r.project,
@@ -218,15 +201,12 @@ function dbToTask(r) {
     approvedAt:       r.approved_at       || null,
     rejectionReason:  r.rejection_reason  || null,
     rejectionPhotos:  r.rejection_photos  || [],
-    myTasks:          r.my_tasks           || [],
-    // mentions derived from comments — no DB column required
-    mentions:         extractMentions(comments),
+    myTasks:          r.my_tasks          || [],
+    mentions,
   };
 }
 
 function taskToDb(t) {
-  // IMPORTANT: only include columns that exist in your Supabase tasks table.
-  // Run the migration SQL in README to add rejection_reason and rejection_photos.
   return {
     id:                t.id,
     project:           t.project,
@@ -247,7 +227,8 @@ function taskToDb(t) {
     approved_at:       t.approvedAt       || null,
     rejection_reason:  t.rejectionReason  || null,
     rejection_photos:  t.rejectionPhotos  || [],
-    my_tasks:          t.myTasks           || [],
+    my_tasks:          t.myTasks          || [],
+    mentions:          t.mentions         || [],   // persist mentions so bell works on reload
   };
 }
 
