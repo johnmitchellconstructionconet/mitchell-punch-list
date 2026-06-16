@@ -727,10 +727,35 @@ function InternalApp() {
 
   const openTask = tasks.find(t=>t.id===openTaskId);
 
-  const loadCode = async () => { const v = await getSetting("teamcode"); return v||""; };
+  // Pre-load team code so the sign-in check is instant (no round-trip on button click)
+  const [preloadedCode, setPreloadedCode] = useState(null);
+  useEffect(()=>{
+    getSetting("teamcode").then(v=>setPreloadedCode(v||""));
+  },[]);
+  const loadCode = async () => {
+    // Use cached value if available, otherwise fetch
+    if(preloadedCode !== null) return preloadedCode;
+    const v = await getSetting("teamcode"); return v||"";
+  };
 
   if(!authed) return <Shell><InternalLogin loadCode={loadCode} onAuth={name=>{setUser(name);setAuthed(true);}}/></Shell>;
-  if(!loaded) return <Shell><Loader txt="Loading…"/></Shell>;
+  if(!loaded) return (
+    <CompanyCtx.Provider value={coSettings}>
+    <Shell>
+      <InternalHeader userName={user} syncing={true} onSync={()=>{}} mentionCount={0} onMentions={()=>{}} onSignOut={()=>{setAuthed(false);setUser(null);setLoaded(false);}}/>
+      <div style={{padding:"32px 20px",maxWidth:900,margin:"0 auto"}}>
+        {/* Skeleton cards */}
+        {[1,2,3].map(i=>(
+          <div key={i} style={{background:C.card,borderRadius:12,marginBottom:14,padding:"20px 18px",border:`1px solid ${C.line}`}}>
+            <div style={{width:`${60+i*10}%`,height:14,background:C.line,borderRadius:4,marginBottom:10,animation:"pulse 1.2s ease-in-out infinite"}}/>
+            <div style={{width:"40%",height:10,background:C.mist,borderRadius:4}}/>
+          </div>
+        ))}
+        <style>{`@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}}`}</style>
+      </div>
+    </Shell>
+    </CompanyCtx.Provider>
+  );
 
   return(
     <CompanyCtx.Provider value={coSettings}>
