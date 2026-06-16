@@ -55,7 +55,7 @@ function printHTML(html) {
 const DEFAULT_SETTINGS = {
   name: "", tagline: "", address: "", city: "", state: "", zip: "",
   phone: "", email: "", website: "", license: "",
-  accentColor: "#1E2336", logoUrl: "",
+  accentColor: "#1E2336", headerColor: "", logoUrl: "",
 };
 
 const CompanyCtx = React.createContext(DEFAULT_SETTINGS);
@@ -240,7 +240,7 @@ td{border-bottom:1px solid #F0EDE8;padding:6px;vertical-align:top}
 @media print{body{padding:0}}</style></head><body>
 <div class="hdr">
   <div>
-    ${coSettings.logoUrl?`<img src="${coSettings.logoUrl}" style="height:40px;max-width:180px;object-fit:contain;display:block;margin-bottom:4px" alt="">`:`<div style="font-family:'Cormorant Garamond',Georgia,serif;font-size:22px;color:#8A8279;font-style:italic">${esc(coSettings.name||"")}</div>`}
+    ${coSettings.logoUrl?`<img src="${coSettings.logoUrl}" style="height:80px;max-width:280px;object-fit:contain;display:block;margin-bottom:6px" alt="">`:`<div style="font-family:'Cormorant Garamond',Georgia,serif;font-size:22px;color:#8A8279;font-style:italic">${esc(coSettings.name||"")}</div>`}
     <h1>${esc(project.name)}</h1>
     <div style="font-size:12px;color:#8A8279">${[project.client,project.address].filter(Boolean).join(" · ")||""}${tradeLabel?`<b>${tradeLabel}</b>`:""}</div>
   </div>
@@ -864,31 +864,26 @@ function Shell({children}){
 
 function Wordmark({size=32,forceText,darkBg=false}){
   const co=useCompany();
+  // Customer logo overrides the system brand
+  if(co.logoUrl&&!forceText){
+    return <img src={co.logoUrl} alt={co.name} style={{height:size*1.4,maxWidth:size*6,objectFit:"contain",display:"block"}}/>;
+  }
+  // SnagList system logo — embedded directly so no external dependency
+  const LOGO_B64 = "data:image/webp;base64,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";
+  const h = Math.round(size * 1.1);
+  const w = Math.round(h * (480/116)); // maintain aspect ratio
+  if(darkBg){
+    // On dark backgrounds render with a slight brightness boost via filter
+    return <img src={LOGO_B64} alt="SnagList" style={{height:h,width:w,objectFit:"contain",display:"block",filter:"brightness(0) invert(1)"}}/>;
+  }
+  return <img src={LOGO_B64} alt="SnagList" style={{height:h,width:w,objectFit:"contain",display:"block"}}/>;
+}){
+  const co=useCompany();
   // If the customer has uploaded a logo, always show it
   if(co.logoUrl&&!forceText){
     return <img src={co.logoUrl} alt={co.name} style={{height:size*1.4,maxWidth:size*6,objectFit:"contain",display:"block"}}/>;
   }
-  // SnagList system brand — shown when no customer logo is set
-  const s=size;
-  return(
-    <div style={{display:"inline-flex",alignItems:"center",gap:Math.round(s*0.35),lineHeight:1,userSelect:"none"}}>
-      {/* Icon: two interlocking hexagon-ish brackets with checkmark, mirroring the logo */}
-      <svg width={Math.round(s*1.1)} height={Math.round(s*1.1)} viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
-        {/* Top-left dark shape */}
-        <path d="M8 16 L16 8 L32 8 L40 16" stroke="#1E2336" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round" fill="none"/>
-        <path d="M8 16 L8 28" stroke="#1E2336" strokeWidth="3.5" strokeLinecap="round" fill="none"/>
-        {/* Checkmark */}
-        <path d="M17 25 L22 31 L31 19" stroke="#9B8E7E" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" fill="none"/>
-        {/* Bottom-right taupe shape */}
-        <path d="M40 32 L32 40 L16 40 L8 32" stroke="#9B8E7E" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round" fill="none"/>
-        <path d="M40 20 L40 32" stroke="#9B8E7E" strokeWidth="3.5" strokeLinecap="round" fill="none"/>
-      </svg>
-      {/* Wordmark: "Snag" bold, "List" light — adapt to background */}
-      <div style={{fontFamily:"Raleway,system-ui,sans-serif",fontWeight:300,letterSpacing:"-0.01em",whiteSpace:"nowrap"}}>
-        <span style={{fontSize:s,color:darkBg?"#FFFFFF":"#1E2336",fontWeight:600}}>Snag</span><span style={{fontSize:s,color:darkBg?"rgba(255,255,255,0.55)":"#9B8E7E",fontWeight:300}}>List</span>
-      </div>
-    </div>
-  );
+  return null; // replaced by function above
 }
 
 function Btn({kind="primary",children,...p}){
@@ -1155,25 +1150,34 @@ function InternalLogin({loadCode,onAuth}){
   );
 }
 
-function InternalPortalLabel(){
+function InternalPortalLabel({headerIsLight=false}){
   const co=useCompany();
-  return <div style={{fontFamily:"Raleway,system-ui,sans-serif",fontSize:16,fontWeight:400,color:"rgba(255,255,255,0.7)",borderLeft:"1px solid rgba(255,255,255,0.2)",paddingLeft:12}}>{co.name?co.name+" — SnagList":"SnagList"}</div>;
+  const textColor=headerIsLight?"rgba(0,0,0,0.5)":"rgba(255,255,255,0.7)";
+  const borderColor=headerIsLight?"rgba(0,0,0,0.15)":"rgba(255,255,255,0.2)";
+  return <div style={{fontFamily:"Raleway,system-ui,sans-serif",fontSize:16,fontWeight:400,color:textColor,borderLeft:`1px solid ${borderColor}`,paddingLeft:12}}>{co.name?co.name+" — SnagList":"SnagList"}</div>;
 }
 
 function InternalHeader({userName,syncing,onSync,onSignOut,mentionCount,onMentions}){
+  const co=useCompany();
+  const headerBg=co.headerColor||C.navy;
+  const isLight=(()=>{const h=headerBg.replace('#','');const r=parseInt(h.slice(0,2),16),g=parseInt(h.slice(2,4),16),b=parseInt(h.slice(4,6),16);return(r*299+g*587+b*114)/1000>155;})();
+  const textColor=isLight?"rgba(0,0,0,0.75)":"rgba(255,255,255,0.85)";
+  const dimColor=isLight?"rgba(0,0,0,0.4)":"rgba(255,255,255,0.45)";
+  const btnBorder=isLight?"1px solid rgba(0,0,0,0.15)":"1px solid rgba(255,255,255,0.2)";
+  const btnBg=isLight?"rgba(0,0,0,0.06)":"rgba(255,255,255,0.1)";
   return(
-    <div style={{background:C.navy,borderBottom:`1px solid ${C.navyLight}`,padding:"10px 16px",display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
-      <Wordmark size={28} darkBg/>
-      <InternalPortalLabel/>
+    <div style={{background:headerBg,borderBottom:`1px solid ${isLight?C.line:C.navyLight}`,padding:"10px 16px",display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+      <Wordmark size={28} darkBg={!isLight}/>
+      <InternalPortalLabel headerIsLight={isLight}/>
       <div style={{flex:1}}/>
-      <div style={{textAlign:"right",fontSize:13,color:"rgba(255,255,255,0.8)",fontWeight:500}}>{userName}<div style={{...CAPT,fontSize:10,color:"rgba(255,255,255,0.4)"}}>Team</div></div>
+      <div style={{textAlign:"right",fontSize:13,color:textColor,fontWeight:500}}>{userName}<div style={{...CAPT,fontSize:10,color:dimColor}}>Team</div></div>
       {/* Bell icon */}
-      <button onClick={onMentions} style={{position:"relative",background:mentionCount>0?C.taupe:"transparent",color:mentionCount>0?"#fff":"rgba(255,255,255,0.6)",padding:"9px 11px",fontSize:16,border:mentionCount>0?"1px solid rgba(255,255,255,0.5)":"1px solid rgba(255,255,255,0.2)",borderRadius:8,cursor:"pointer"}} title="Mentions">
+      <button onClick={onMentions} style={{position:"relative",background:mentionCount>0?co.accentColor||C.taupe:btnBg,color:mentionCount>0?"#fff":textColor,padding:"9px 11px",fontSize:16,border:mentionCount>0?"none":btnBorder,borderRadius:8,cursor:"pointer"}} title="Mentions">
         🔔
         {mentionCount>0&&<span style={{position:"absolute",top:-5,right:-5,background:C.rust,color:"#fff",borderRadius:"50%",width:18,height:18,fontSize:10,fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center",lineHeight:1}}>{mentionCount>9?"9+":mentionCount}</span>}
       </button>
-      <button onClick={onSync} style={{background:"rgba(255,255,255,0.1)",color:"rgba(255,255,255,0.8)",padding:"9px 11px",fontSize:13,border:"1px solid rgba(255,255,255,0.2)",borderRadius:8}}>{syncing?"Syncing…":"⟳"}</button>
-      <button onClick={onSignOut} style={{background:"transparent",color:"rgba(255,255,255,0.6)",padding:"9px 8px",fontSize:13,border:"1px solid rgba(255,255,255,0.2)",borderRadius:8}}>Sign out</button>
+      <button onClick={onSync} style={{background:btnBg,color:textColor,padding:"9px 11px",fontSize:13,border:btnBorder,borderRadius:8}}>{syncing?"Syncing…":"⟳"}</button>
+      <button onClick={onSignOut} style={{background:"transparent",color:dimColor,padding:"9px 8px",fontSize:13,border:btnBorder,borderRadius:8}}>Sign out</button>
     </div>
   );
 }
@@ -2373,7 +2377,7 @@ function QRModal({project,onClose}){
     const html=`<!DOCTYPE html><html><head><meta charset="utf-8"><title>QR — ${esc(project.name)}</title>
 <style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:Raleway,sans-serif;background:#fff;display:flex;align-items:center;justify-content:center;min-height:100vh;padding:32px}.page{width:100%;max-width:480px;border:2px solid #E8E5E0;border-radius:16px;padding:32px;text-align:center}.co-name{font-family:'Cormorant Garamond',Georgia,serif;font-size:22px;font-weight:600;color:#1C1A18;margin-bottom:8px}.job-name{font-family:'Cormorant Garamond',Georgia,serif;font-size:30px;font-weight:600;color:#1C1A18;margin:16px 0 5px}.qr-wrap{display:inline-block;padding:14px;background:#fff;border:1px solid #E8E5E0;border-radius:12px;margin:16px 0}.qr-img{display:block;width:240px;height:240px}.footer{font-size:11px;color:#B5B0A8;margin-top:8px}.url{font-size:9px;color:#B5B0A8;word-break:break-all;margin-top:14px;padding-top:12px;border-top:1px solid #E8E5E0}@media print{body{padding:16px}}</style></head><body>
 <div class="page">
-  ${co.logoUrl?`<img src="${co.logoUrl}" style="max-height:60px;max-width:200px;object-fit:contain;margin-bottom:8px" alt="${esc(co.name)}"><br>`:""}
+  ${co.logoUrl?`<img src="${co.logoUrl}" style="max-height:90px;max-width:300px;object-fit:contain;margin-bottom:10px" alt="${esc(co.name)}"><br>`:""}
   <div class="co-name">${esc(co.name)}</div>
   <div class="job-name">${esc(project.name)}</div>
   ${jobInfo?`<div style="font-size:13px;color:#8A8279;margin-bottom:6px">${esc(jobInfo)}</div>`:""}
@@ -2889,6 +2893,7 @@ function CompanySettings({settings,onSave,onClose}){
   };
   const save=async()=>{setSaving(true);await onSave(f);setSaving(false);};
   const ACCENT_PRESETS=["#BBA270","#C0864A","#7B9E6B","#5C7A9E","#9E5C6A","#6B5C9E","#2E2B28","#8B7355"];
+  const HEADER_PRESETS=["#1E2336","#2E2B28","#1A3A2A","#1A2744","#3D2B1F","#2B1A3D","#FFFFFF","#F2F0EC"];
   return(
     <Modal onClose={onClose} wide><div style={{padding:20}}>
       <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:16}}>
@@ -2922,6 +2927,34 @@ function CompanySettings({settings,onSave,onClose}){
         <div><Lbl>Website</Lbl><input value={f.website} onChange={set("website")}/></div>
         <div><Lbl>License #</Lbl><input value={f.license} onChange={set("license")}/></div>
       </div>
+
+      {/* Header color */}
+      <div style={{background:C.mist,borderRadius:12,padding:14,marginBottom:12}}>
+        <div style={{...CAPT,fontSize:11,fontWeight:700,color:C.taupe,marginBottom:6}}>Header color</div>
+        <div style={{fontSize:12,color:C.stone,marginBottom:10}}>Changes the navigation bar color across the entire app.</div>
+        {/* Live preview */}
+        <div style={{borderRadius:8,overflow:"hidden",marginBottom:12,boxShadow:"0 2px 8px rgba(0,0,0,0.12)"}}>
+          <div style={{background:f.headerColor||C.navy,padding:"8px 14px",display:"flex",alignItems:"center",gap:10}}>
+            <div style={{width:60,height:14,background:"rgba(255,255,255,0.25)",borderRadius:3}}/>
+            <div style={{flex:1}}/>
+            <div style={{width:32,height:14,background:"rgba(255,255,255,0.15)",borderRadius:3}}/>
+            <div style={{width:32,height:14,background:"rgba(255,255,255,0.15)",borderRadius:3}}/>
+          </div>
+        </div>
+        <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
+          {HEADER_PRESETS.map(c=>(
+            <button key={c} onClick={()=>setF(p=>({...p,headerColor:c}))}
+              style={{width:36,height:36,borderRadius:8,background:c,
+                border:(f.headerColor||C.navy)===c?`3px solid ${C.ink}`:"2px solid "+C.line,
+                boxShadow:"0 0 0 1px rgba(0,0,0,0.1)",cursor:"pointer",position:"relative"}}>
+              {(f.headerColor||C.navy)===c&&<span style={{position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center",color:c==="#FFFFFF"||c==="#F2F0EC"?"#333":"#fff",fontSize:14,fontWeight:700}}>✓</span>}
+            </button>
+          ))}
+          <input type="color" value={f.headerColor||C.navy} onChange={set("headerColor")} style={{width:36,height:36,padding:2,borderRadius:6,border:`1px solid ${C.line}`,cursor:"pointer"}}/>
+        </div>
+      </div>
+
+      {/* Accent color */}
       <div style={{background:C.mist,borderRadius:12,padding:14,marginBottom:16}}>
         <div style={{...CAPT,fontSize:11,fontWeight:700,color:C.taupe,marginBottom:10}}>Accent color</div>
         <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
@@ -3125,7 +3158,7 @@ function Report({tasks,jobLabel,filters,userName,loadPhoto,onBack,project}){
         body+=`</tbody></table>`;
       }
     }
-    const logoHtml=co.logoUrl?`<img src="${co.logoUrl}" style="height:48px;max-width:200px;object-fit:contain;display:block;margin-bottom:4px" alt="">`:`<div style="font-family:'Cormorant Garamond',Georgia,serif;font-size:28px;color:#7B756E;font-style:italic">${esc(co.name||"")}</div>`;
+    const logoHtml=co.logoUrl?`<img src="${co.logoUrl}" style="height:90px;max-width:320px;object-fit:contain;display:block;margin-bottom:8px" alt="">`:`<div style="font-family:'Cormorant Garamond',Georgia,serif;font-size:28px;color:#7B756E;font-style:italic">${esc(co.name||"")}</div>`;
     const html=`<!DOCTYPE html><html><head><meta charset="utf-8"><title>SnagList Report — ${esc(jobLabel)}</title><style>@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Raleway:wght@300;400;500;600;700&display=swap');body{font-family:Raleway,sans-serif;color:#2E2B28;max-width:860px;margin:0 auto;padding:32px 24px}.hdr{display:flex;justify-content:space-between;border-bottom:3px solid #2E2B28;padding-bottom:12px}h1{font-family:'Cormorant Garamond',Georgia,serif;font-size:30px;font-weight:600;margin:6px 0 2px}h2{font-family:'Cormorant Garamond',Georgia,serif;font-size:20px;font-weight:600;border-bottom:2px solid #DDD9D3;padding-bottom:3px;margin:24px 0 5px}h3{font-size:11px;text-transform:uppercase;letter-spacing:0.1em;color:#7B756E;margin:12px 0 3px}table{width:100%;border-collapse:collapse;font-size:13px}th{text-align:left;color:#7B756E;border-bottom:1px solid #B2A98B;padding:5px 6px;font-size:11px;text-transform:uppercase}td{border-bottom:1px solid #E8E4DE;padding:5px 6px;vertical-align:top}.meta{text-align:right;font-size:12px;color:#555}.foot{margin-top:36px;font-size:11px;color:#9A9590;border-top:1px solid #DDD9D3;padding-top:8px}@media print{body{padding:0}}</style></head><body><div class="hdr"><div>${logoHtml}<h1>SnagList Report</h1><div style="font-size:12px;letter-spacing:0.08em;text-transform:uppercase;font-weight:600;color:#7B756E;margin-top:3px">${esc(jobLabel)}</div>${project&&project.siteContact?`<div style="font-size:12px;color:#8A8279;margin-top:3px">Site: ${esc(project.siteContact)}${project.sitePhone?" · "+esc(project.sitePhone):""}</div>`:""}</div><div class="meta"><div>Generated ${fmtDate(today())} by ${esc(userName)}</div><div style="font-weight:700;margin-top:3px">${open} open · ${done} approved · ${tasks.length} total</div></div></div>${body}<div class="foot">${esc(co.name)}${[co.address,co.city,co.state].filter(Boolean).length>0?" · "+[co.address,co.city,co.state].filter(Boolean).map(esc).join(", "):""}${co.phone?" · "+esc(co.phone):""}<div style="font-family:'Cormorant Garamond',Georgia,serif;font-style:italic;color:${co.accentColor||"#BBA270"};font-size:13px;margin-top:2px">"${esc(co.tagline||"")}"</div></div></body></html>`;
     printHTML(html);
   }finally{setExporting(false);}};
