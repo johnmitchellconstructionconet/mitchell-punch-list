@@ -4,7 +4,7 @@ import {
   getTasks, upsertTask, deleteTask,
   getCompanies, upsertCompany, deleteCompany,
   getPhoto, savePhoto as dbSavePhoto,
-  getSetting, setSetting,
+  getSetting, setSetting, getAllSettings, getTaskFull,
   wipeAll as dbWipeAll,
 } from "./supabase.js";
 
@@ -148,10 +148,13 @@ function JobLinkApp({ jobId }) {
 
   const load = useCallback(async () => {
     setSyncing(true);
-    const [projs, allTasks, csRaw] = await Promise.all([
-      getProjects(), getTasks(), getSetting("cosettings"),
+    const [projs, allTasks, allSettings] = await Promise.all([
+      getProjects(), getTasks(), getAllSettings(),
     ]);
-    if (csRaw) { try { setCoSettings(s=>({...s,...JSON.parse(csRaw)})); } catch {} }
+    const csRaw = allSettings["cosettings"];
+    const logoUrl = allSettings["logourl"]||"";
+    if(csRaw){ try{ setCoSettings(s=>({...s,...JSON.parse(csRaw),logoUrl})); }catch{} }
+    else if(logoUrl){ setCoSettings(s=>({...s,logoUrl})); }
     const proj = projs.find(p=>p.id===jobId);
     setProject(proj||null);
     setTasks(proj ? allTasks.filter(t=>t.project===proj.name) : []);
@@ -165,12 +168,13 @@ function JobLinkApp({ jobId }) {
     return ()=>clearInterval(interval);
   },[load]);
 
+  const _pcRef1=useRef({});
   const loadPhoto = useCallback(async pid=>{
-    if(photoCache[pid]) return photoCache[pid];
+    if(_pcRef1.current[pid]) return _pcRef1.current[pid];
     const v = await getPhoto(pid);
-    if(v) setPhotoCache(c=>({...c,[pid]:v}));
+    if(v){ _pcRef1.current[pid]=v; setPhotoCache(c=>({...c,[pid]:v})); }
     return v;
-  },[photoCache]);
+  },[]);
 
   if (!loaded) return <Shell><Loader txt="Loading job…"/></Shell>;
 
@@ -607,19 +611,22 @@ function InternalApp() {
   const loadAll = useCallback(async()=>{
     setSyncing(true);
     try {
-      const [p, t, c, tc, cs, tm] = await Promise.all([
-        getProjects(), getTasks(), getCompanies(),
-        getSetting("teamcode"), getSetting("cosettings"), getSetting("teammembers"),
+      // 3 parallel queries instead of 6 — getAllSettings fetches all keys in one trip
+      const [p, t, c, allSettings] = await Promise.all([
+        getProjects(), getTasks(), getCompanies(), getAllSettings(),
       ]);
       setProjects(p);
       setTasks(t);
       setCompanies(c);
-      setTeamCode(tc||"");
-      if(cs) { try { setCoSettings(s=>({...s,...JSON.parse(cs)})); } catch {} }
+      setTeamCode(allSettings["teamcode"]||"");
+      const cs = allSettings["cosettings"];
+      const logoUrl = allSettings["logourl"]||"";
+      if(cs) { try { setCoSettings(s=>({...s,...JSON.parse(cs),logoUrl})); } catch {} }
+      else if(logoUrl) { setCoSettings(s=>({...s,logoUrl})); }
+      const tm = allSettings["teammembers"];
       if(tm) { try { setTeamMembers(JSON.parse(tm)); } catch {} }
     } catch(e) {
       console.error("loadAll failed:", e);
-      // Still mark loaded so the UI shows — user can manually refresh
     }
     setSyncing(false); setLoaded(true);
   },[]);
@@ -683,17 +690,27 @@ function InternalApp() {
   };
 
   const pTC = async v => { setTeamCode(v); await setSetting("teamcode", v); };
-  const pCS = async v => { setCoSettings(v); await setSetting("cosettings", JSON.stringify(v)); };
+  const pCS = async v => {
+    setCoSettings(v);
+    // Store logoUrl separately — it's a large base64 string and doesn't need
+    // to be fetched on every load alongside the other small settings
+    const { logoUrl, ...rest } = v;
+    await Promise.all([
+      setSetting("cosettings", JSON.stringify(rest)),
+      setSetting("logourl", logoUrl||""),
+    ]);
+  };
   const saveTeamMembers = async v => { setTeamMembers(v); await setSetting("teammembers", JSON.stringify(v)); };
 
   const markNotif = (trade,id) => setPendingNotif(p=>({...p,[trade]:[...new Set([...(p[trade]||[]),id])]}));
 
+  const _pcRef2=useRef({});
   const loadPhoto = useCallback(async pid=>{
-    if(photoCache[pid]) return photoCache[pid];
+    if(_pcRef2.current[pid]) return _pcRef2.current[pid];
     const v = await getPhoto(pid);
-    if(v) setPhotoCache(c=>({...c,[pid]:v}));
+    if(v){ _pcRef2.current[pid]=v; setPhotoCache(c=>({...c,[pid]:v})); }
     return v;
-  },[photoCache]);
+  },[]);
 
   const savePhoto = async dataUrl => {
     const pid = uid();
